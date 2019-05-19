@@ -65,6 +65,7 @@ def EPIC_data(day, plot=True):
     """
     # starting on the desired day
     n=0
+    print (TIME_DAYS)
     while (TIME_DAYS[n] < day):
         n += 1 # this n is where we want to start
         
@@ -99,11 +100,12 @@ def EPIC_data(day, plot=True):
             contains_nan = True     
     if contains_nan: # data not usable
         print("CAUTION: "+str(number_of_nans)+" points in this set are NaN")
-        return t, longitude, reflectance, reflectance_err, contains_nan
+       # return t, longitude, reflectance, reflectance_err, contains_nan
     
     # if we want to plot the raw data
-    if plot:
+    if (plot):
         # plotting reflectance over time
+        print ("why arent you working")
         fig = plt.figure()
         ax1 = fig.add_subplot(111)    
         ax1.errorbar(t, reflectance, yerr=reflectance_err, fmt='.', 
@@ -852,7 +854,7 @@ def map_into_eckert(params, nlats=200, nlons=200, day=None):
             elif (i <= 8*interval):
                 temp = [params[7] for i in range(nlats)]
             data.append(temp)
-       
+                
     # make the map using a Plate Carree transformation
     # colour map: greys
     cs = ax.contourf(lons, lats, data, transform=ccrs.PlateCarree(),
