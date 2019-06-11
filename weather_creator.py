@@ -2,22 +2,33 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import random as ran
 import cartopy.crs as ccrs
+import matplotlib.cm as cm
 import matplotlib.ticker as mticker
+import matplotlib.colors as colors
 import matplotlib.animation as animation
 from matplotlib import style
 import collections
 import emcee
 import scipy.optimize as op
 
-
+#Various functions for a dynamic kernel
 def timeToLongitude(time):
     """
     Function that converts time since an arbitrary start of the simulation to 
     longitude. Important that the input is in SECONDS. 
     """
-    longitude = [(2*np.pi-(t%86148.0)*(2*np.pi/86148.0))%(2*np.pi) for t in time]
+    longitude = [(2*np.pi-(t%86148.0)*(2*np.pi/86148.0)) for t in time]
     longitude = np.rad2deg(longitude)
     return longitude
+
+def longitudeToTime(longitude):
+    time = [(2*np.pi-l)/(2*np.pi/86148.0) for l in longitude]
+    return time
+
+def findSlice(theta,gridlines):
+    for i in range(len(gridlines)-1):
+        if theta < gridlines[i] and theta > gridlines[i+1]:
+            return i 
 
 def initialPlanet(numOfSlices,plot=True,nlons=400,nlats=400):
     """
@@ -51,8 +62,8 @@ def kernel(longitude,phi_obs):
     return V*V # K=I*V=V*V
 
 def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0, 
-               plot=False, alb=False): 
-    """
+               plot=False, alb=False,lon=None,ndata=None): 
+    """ 
     Input: an array of albedos, the time in days which the model should span
     (default: 1.0), the longitude as a fraction of 2pi which the model should 
     span (default: 1.0), the no. of points n to generate (default: 10000), 
@@ -60,7 +71,7 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0
     whether or not to plot the lightcurve (default: False), and a boolean 
     indicating whether to return the reflectance or to apply the 
     multiplicative factor of 3/2 such that the lightcurve's units match those 
-    of EPIC data
+    of EPIC data.
     
     Computes the lightcurve A*(t) predicted by the forward model.
     
@@ -69,11 +80,18 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0
     C = 4.0/(3.0*np.pi) # integration constant
     
     # n times between 0 and 23.93 h, in h
-    time = np.linspace(0.0, time_days*24, n, False)
+    #print (time_days,"time_days")
     # len(albedos) longitudes
-    phi = np.linspace(2*np.pi, 0, len(albedos), False) 
-    
-    w_Earth = 2.0*np.pi/23.93 # Earth's angular velocity 
+    if type(lon) == type(None):
+        time = np.linspace(0.0, time_days*24, n,False)
+        phi = np.linspace(2*np.pi, 0, len(albedos),False) 
+    else:
+        phi = np.asarray(np.deg2rad(lon))
+        #time = np.asarray(longitudeToTime(phi))/(60*60)
+        time = np.linspace(0.0, time_days*24, n,False)
+
+        
+    w_Earth = 2.0*np.pi/24 # Earth's angular velocity 
     phi_obs = phi_obs_0 - 1.0*w_Earth*time # SOP longitude at each time
     # phi decreases before returning to 0 in this convention
     
@@ -100,21 +118,8 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0
         plt.show()
     
     return time, reflectance
-#Delete this function
-def A(albedo,time,numberOfslices):
-    """
-    Function that calculates the apparent albedo for a longitudinal slice. It assumes that 
-    the Earth rotates in 23.93 hours as per the EPIC data. 
-    """
-    gridlines = Eckert(albedo,numberOfslices,plot=False)[3]
-    A = np.zeros(len(albedo))
-    w = 2*np.pi/(23.93)
-    #time = [i*23.93/numberOfslices for i in range(numberOfslices)]
-    for i in range(len(A)):
-        A[i] = 4/(3*np.pi)*albedo[i]*((1/2)*(gridlines[i]-gridlines[i+1])+(1/4)*np.sin(2*(gridlines[i]-gridlines[i+1]+w*time)))
-    return A
 
-def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,plot=True,data=False):
+def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,plot=True,data=False):
     """
     General function to plot the Eckert map based off the number of slices
     Inputs:
@@ -134,15 +139,18 @@ def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,plot=True,data=False)
     lattitude, longitude = np.meshgrid(lattitude,longitude)
     w = 0
     A = []
+    a_dumb = []
     gridlines=[360]
     for i in range(nlons):
         if (w == len(albedo)):
             break
         temp = [albedo[w] for j in range(nlats)]
+        temp_dum = [np.random.randint(0,2) for j in range(nlats)]
         if i%interval==0 and i!=0:
             w=w+1
             gridlines.append(longitude[i][0])
         A.append(temp)
+        a_dumb.append(temp_dum)
     gridlines.append(0)
     if plot == False:
         return longitude,lattitude,A,gridlines
@@ -159,13 +167,12 @@ def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,plot=True,data=False)
         cmap='gist_gray',alpha=0.3)
     if data: 
         return cs
-    cbar = fig.colorbar(cs)
+    cbar = fig.colorbar(bar)
     cbar.ax.set_ylabel(r'Apparent Albedo $A^*$')
     ax.coastlines()
     ax.gridlines(color='grey',linewidth=1.5,xlocs = gridlines,ylocs=None) 
     ax.set_global()
     #plt.show()
-    #ax.clear()
     return longitude,lattitude,A,cs,fig,ax,gridlines
 
 def cloudCoverage(numOfSlices):
@@ -270,8 +277,49 @@ def dynamicMap(time,numOfSlices,Acloud,surfAlb,cloudIn,rateDiss,speedCloud):
     effAlb=effectiveAlbedo(numOfSlices,Acloud,False,cloudIn,surfAlb)
     return effAlb,cloudIn
 
-#MCMC
-def lnlike(alpha, time, ref, ref_err):
+def rotateEarth(w,albedo,numberOfSlices,t,Days):
+    """
+    Function that rotates the albedo array based on the angular velocity. 
+    Inputs:
+        w: angular velocity 
+        albedo: albedo array 
+        numberOfSlices: number of slices lol 
+        t: time (in HOURS)
+    Outputs: a shifted array of albedos 
+    """
+    #shift index by -1 since the Earth rotates from West to East 
+    diff = 2*np.pi/numberOfSlices
+    cond = diff/w
+    #
+    time_array = [cond*i for i in range(1,(numberOfSlices+1)*Days)] 
+
+    if any(s == t  for s in time_array):
+        albedo = np.roll(albedo,-1)
+    return albedo
+
+#MCMC fitting (imported from cloud_killer_lib.py for more efficient runtimes)
+
+def mcmc_results(chain, burnin):
+    """
+    Input: an emcee sampler chain and the steps taken during the burnin
+    
+    Averages the position of all walkers in each dimension of parameter space 
+    to obtain the mean MCMC results 
+    
+    Output: an array representing the mean albedo map found via MCMC
+    """
+    ndims = len(chain[0][0]) # obtain no. of dimensions
+    flat = flatten_chain(chain, burnin) # flattened chain, post-burnin
+    
+    mcmc_params = []
+    for n in range(ndims): # for each dimension
+        param_n_temp = []
+        for w in range(len(flat)):
+            param_n_temp.append(flat[w][n])
+        mcmc_params.append(np.mean(param_n_temp)) # append the mean
+    return mcmc_params
+
+def lnlike(alpha, time,ref, ref_err,lon,timespan,phispan):
     """
     Input: array of albedos A(phi) to feed into the forward model and the time, 
     lightcurve, and error on the lightcurve of the data being fit
@@ -285,12 +333,12 @@ def lnlike(alpha, time, ref, ref_err):
     
     # time/longitude spanned by forward model
     timepts = len(time) # no. of time points
-    timespan = (time[-1]-time[0]) # time spanned, in days
-    phispan = timespan # longitude spanned, as a fraction of 2pi
+    #timespan = (time[-1]-time[0]) # time spanned, in days
+    #phispan = timespan # longitude spanned, as a fraction of 2pi
     
     # obtain model prediction, in units of apparent albedo
     model_time, model_ref = apparentAlbedo(alpha, timespan, phispan, timepts, 
-                                       0, plot=False, alb=True) 
+                                       0, plot=False, alb=True,lon=lon) 
     
     # compute ln(likelihood)
     chisq_num = np.power(np.subtract(ref,model_ref), 2) # (data-model)**2
@@ -300,7 +348,7 @@ def lnlike(alpha, time, ref, ref_err):
     
     return res
 
-def opt_lnlike(alpha, time, ref, ref_err):
+def opt_lnlike(alpha, time, ref, ref_err,lon,timespan,phispan):
     """
     Input: guesses for the fit parameters (alpha, an array of albedos, 
     representing A(phi)) and the time, lightcurve, and error on the lightcurve 
@@ -310,15 +358,15 @@ def opt_lnlike(alpha, time, ref, ref_err):
     
     Output: The values of albedos with maximum likelihood
     """
-    nll = lambda alpha,time,ref,ref_err: -lnlike(alpha,time,ref,ref_err) # return -lnlike of args
+    nll = lambda *args: -lnlike(*args) # return -lnlike of args
     # boundaries on the possible albedos:
     bound_alb = tuple((0.000001,0.999999) for i in range(len(alpha))) 
     # minimize (-ln(like)) to maximimize the likelihood 
-    result = op.minimize(nll, alpha, args=(time,ref,ref_err), bounds=bound_alb)
+    result = op.minimize(nll, alpha, args=(time,ref,ref_err,lon,timespan,phispan), bounds=bound_alb)
     
     return result['x'] # the optimized parameters
 
-def init_walkers(alpha, time, ref, ref_err, ndim, nwalkers):
+def init_walkers(alpha, time, ref, ref_err, ndim, nwalkers,lon,timespan,phispan):
     """
     Input: guesses for the fit parameters (alpha, an array of albedos,
     representing A(phi)), the time, lightcurve, and error on the lightcurve of 
@@ -331,7 +379,7 @@ def init_walkers(alpha, time, ref, ref_err, ndim, nwalkers):
     Output: the initial positions of all walkers in the ndim-dimensional 
     parameter space
     """
-    opt_albs = opt_lnlike(alpha, time, ref, ref_err) # mazimize likelihood
+    opt_albs = opt_lnlike(alpha, time, ref, ref_err,lon,timespan,phispan) # mazimize likelihood
     # generate walkers in Gaussian ball
     pos = [opt_albs + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
     return pos
@@ -346,7 +394,7 @@ def lnprior(alpha):
         return 0.0
     return -np.inf # if not, probability goes to 0 
 
-def lnpost(alpha, time, ref, ref_err):
+def lnpost(alpha, time, ref, ref_err,lon,timespan,phispan):
     """
     Input: guesses for the fit parameters (alpha, an array of albedos,
     representing A(phi)) and the time, lightcurve, and error on the lightcurve 
@@ -356,9 +404,9 @@ def lnpost(alpha, time, ref, ref_err):
     lp = lnprior(alpha)
     if not np.isfinite(lp): # if ln(prior) is -inf (prior->0) 
         return -np.inf      # then ln(post) is -inf too
-    return lp + lnlike(alpha, time, ref, ref_err)
+    return lp + lnlike(alpha, time, ref, ref_err,lon,timespan,phispan)
 
-def make_chain(nwalkers, nsteps, ndim, alpha,timespan,phispan,nsamples,phi_init,plot=False,alb=True):
+def make_chain(nwalkers, nsteps, ndim, t,r,lon,timespan,phispan,alb=True):
     """
     Input: the number of albedo slices (parameters) being fit, the number of 
     walkers, and the number of steps to take in the chain, and either the day
@@ -372,8 +420,9 @@ def make_chain(nwalkers, nsteps, ndim, alpha,timespan,phispan,nsamples,phi_init,
     """
     # if making chain for real EPIC data
     # if both a day and synthetic albedos are supplied, array is ignored 
-    if type(alpha) != type(None): 
-        t, r = apparentAlbedo(alpha,timespan,phispan,nsamples,phi_init,plot,alb)
+    if alb: 
+        t = np.asarray(t)
+        r = np.asarray(r)
         r_err = 0.02*r # assuming 2% error     
         # add gaussian noise to the data with a variance of up to 2% mean app alb
         gaussian_noise = np.random.normal(0, 0.02*np.mean(r), len(r))
@@ -383,97 +432,194 @@ def make_chain(nwalkers, nsteps, ndim, alpha,timespan,phispan,nsamples,phi_init,
         print("Error: please supply either a day of interest in the EPIC data \
               or a synthetic array of albedo values.")
         return
-    
+    print ("Got my albedo, Thank you!")
     # guess: alb is 0.25 everywhere
     init_guess = np.asarray([0.25 for n in range(ndim)])
     # better guess: maximize the likelihood
-    opt_params  = opt_lnlike(init_guess, t, r, r_err) 
+    opt_params  = opt_lnlike(init_guess, t, r, r_err,lon,timespan,phispan) 
     
     # initialize nwalkers in a gaussian ball centered on the opt_params
-    init_pos = init_walkers(opt_params, t, r, r_err, ndim, nwalkers)
-    
+    print ("Intializing Walkers...")
+    init_pos = init_walkers(opt_params, t, r, r_err, ndim, nwalkers,lon,timespan,phispan)
+    print ("Walkers initialized, ready for destruction!")
+
     # set up the sampler object and run MCMC 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnpost, args=(t, r, r_err))
+    print ("Setting up chain")
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnpost, args=(t, r, r_err,lon,timespan,phispan))
     sampler.run_mcmc(init_pos, nsteps)
+    print ("chaing completed")
     return sampler.chain
 
-#dynamic 
-def weather_creater(numOfSlices,Days,Acloud,surf,clouds,rateDiss,speedCloud,fastforward=1.0,Animation=True):
-    sliceInst = 0
+def flatten_chain(chain, burnin):
+    """
+    Input: an emcee sampler chain and the steps taken during the burnin
+    Output: a flattened chain, ignoring all steps pre-burnin
+    """
+    ndim = len(chain[0][0]) # number of params being fit 
+    return chain[:,burnin:,:].reshape(-1, ndim)
+
+#THE function that does dem all
+def dataAlbedoDynamic(numOfSlices,Days,w,Acloud,surf,clouds,rateDiss,speedCloud,fastforward=1.0,Animation=True):
     cond = False 
     if (Animation):
         plt.ion()
         fig = plt.figure(1,figsize=(12,6))
+        dum_alb = [np.random.randint(0,2) for i in range(numOfSlices)]
+        dum_lon, dum_lat,dum_A, dum_grid= Eckert(dum_alb,numOfSlices,fig=fig,plot=False)
+        css = plt.contourf(dum_lon,dum_lat,dum_A,cmap='gist_gray',alpha=0.3)
         cond = True
-    longitude = np.linspace(2*np.pi*Days,0,24*Days)
-    for i in range(24*Days):
-        sliceInst = sliceInst+1
-        eff,clouds = dynamicMap(i,numOfSlices,Acloud,surf,clouds,rateDiss,speedCloud*fastforward)
-        if (sliceInst==24*Days+1):
-            break
-        plt.clf()
-        Eckert(eff,numOfSlices,fig=fig,plot=cond)
-        plt.pause(0.01)
-        
+    hPerDay = int((w/(2*np.pi))**(-1))
 
+    hours = np.arange(0,hPerDay)
+    longitude = timeToLongitude(hours*60*60)
+    longitudeF = []
+    ndata = []
+    #Dont know if the bottom two lines are necessary. Ill keep them for now
+    dum_alb = [np.random.randint(0,2) for i in range(numOfSlices)]
+    dum_lon, dum_lat,dum_A, dum_grid= Eckert(dum_alb,numOfSlices,plot=False)
+
+    daysPassed = 0
+
+    for i in range(hPerDay*Days):
+        if (i%hPerDay == 0 and i!=0):
+            daysPassed += 1
+        eff,clouds = dynamicMap(i,numOfSlices,Acloud,surf,clouds,rateDiss,speedCloud*fastforward)
+        surf = rotateEarth(w,surf,numOfSlices,i,Days)
+        diff = int(22/(numOfSlices-2)) 
+        indices = [i*diff for i in range(1,numOfSlices)]
+        counter = 0
+        while (len(indices) != numOfSlices-2):
+            if (counter%2 ==0):
+                del indices[-1]
+            else:
+                del indices[0]            
+        if (i%hPerDay == 0 or i%hPerDay == hPerDay-1 or any(c == i%(hPerDay) for c in indices)):
+            longitudeF.append(360*(Days-daysPassed-1)+longitude[i%len(longitude)])
+            ndata.append(eff[0])
+        plt.clf()
+        if Animation:
+            Eckert(eff,numOfSlices,fig=fig,bar=css,plot=cond)
+            plt.pause(0.01)
+    plt.ioff() 
+    return longitudeF,ndata
+
+def extractN(time,apparent,n):
+    """
+    Function that extracts N evenly spaced data from the apparent albedo array given. 
+    """
+    limit = len(apparent)
+    diff = int(limit/n)
+    indices = [i*diff for i in range(n)]
+    t = [time[i] for i in indices]
+    a = [apparent[i] for i in indices]
     
-    return 0 
+    """
+    if (len(time)%2==0):
+        median = len(time)/2
+    else:
+        median = (len(time)+1)/2
+    minI = median-(int(n/2))
+    maxI = median +(int(n/2))
+    if (maxI > len(time) or minI <0):
+        indices = np.arange(0,len(time),n)
+        print (len(time))
+        print (indices)
+        t = [time[i] for i in indices]
+        a = [apparent[i] for i in indices]
+    else: 
+        t = [time[i] for i in range(int(minI),int(maxI))]
+        a = [apparent[i] for i in range(int(minI),int(maxI))]
+    """
+    return t,a
+
+def runShatelite(numOfSlices,Acloud,rateDiss,speedCloud,w,ndata,fastFoward,Days,nwalkers,nsamples,nsteps,timespan,phispan,burning,plot=True,mcmc=True):
+    #Need to make this a bit more efficient)
+    if (numOfSlices>24):
+        print ("Cannot have more than 24 number of slices for now")
+        return 0,0
+    surf = initialPlanet(numOfSlices,False)
+    clouds = cloudCoverage(numOfSlices)
+    hPerDay = int((w/(2*np.pi))**(-1))
+    finalTime = []
+    apparentTime = []
+    ndim = numOfSlices
+
+    l,d=dataAlbedoDynamic(numOfSlices,Days,w,Acloud,surf,clouds,rateDiss,speedCloud,Animation=False)
+    print ("Got sum fake data. YOHO, SCIENCE BITCH!")
+
+    for i in range(1,Days+1):
+        effective = d[(i-1)*numOfSlices:(i)*(numOfSlices)] 
+        lon = l[(i-1)*numOfSlices:(i)*(numOfSlices)]
+        #longitude = np.linspace(2*np.pi*(i)*deg,(i-1)*2*np.pi*deg,len(effective),False)
+        time, apparent = apparentAlbedo(effective,time_days=timespan,
+                long_frac=phispan,n=10000,plot=False,alb=True,lon=lon)
+        finalTime.append(time+(hPerDay*(i-1)))
+        apparentTime.append(apparent)
+        
+    finalTime= np.asarray(finalTime).flatten()
+    apparentTime = np.asarray(apparentTime).flatten()
+    t,a = extractN(finalTime,apparentTime,ndata*Days)
+    print ("Done extracting {}".format(numOfSlices))
+    
+    if plot:
+        fig,ax = plt.subplots(1,1,gridspec_kw={'height_ratios':[1]},figsize=(10,8))
+        for i in range(Days+1):
+            ax.axvline((i)*hPerDay,color='orange',alpha=1,zorder=10)
+        ax.plot(finalTime,apparentTime,'-',color='black',linewidth=5,label="Simulated curve")
+        ax.errorbar(t,a,fmt='.',color='green',yerr = np.asarray(a)*0.02,markersize=8,solid_capstyle='projecting', capsize=4,
+                    label= "selected {} data".format(ndata))
+        ax.set_xlabel("Time (h)",fontsize=22)
+        ax.set_ylabel("Apparent Albedo ($A^*$)",fontsize = 22)
+        ax.tick_params(labelsize=22)
+        ax.legend(fontsize=15)
+
+    if (mcmc):
+        #Implement the MCMC running stuff in a seperate function
+        for i in range(1,Days+1):
+            chain  = make_chain(nwalkers,nsteps,ndim,t,a,lon,timespan,phispan,alb=True)
+            print ("Well call me a slave, because I just made some chains for day {}...".format(i))
+            mean_mcmc_params = mcmc_results(chain,burning)
+            mean_mcmc_time, mean_mcmc_ref = apparentAlbedo(mean_mcmc_params,time_days=timespan,
+                long_frac=phispan,n=10000,plot=False,alb=True,lon=lon)
+            print ("Got the mean MCMC results for day {}. Ya YEET!".format(i))
+
+            flat = flatten_chain(chain,burning)
+            sample_params = flat[np.random.randint(len(flat),size=nsamples)]
+            for s in sample_params:
+                sample_time,sample_ref = apparentAlbedo(s,time_days=timespan,long_frac=phispan,n=10000,plot=False,alb=True,lon=lon)
+                sample_time = np.asarray(sample_time)
+                mean_mcmc_params = np.asarray(mean_mcmc_params)
+                plotting_x = np.asarray(sample_time)+(i-1)*hPerDay
+                ax.plot(plotting_x,sample_ref,color='k',alpha=0.1)
+            #Need to fix the mean     
+            ax.plot(mean_mcmc_time+(i-1)*hPerDay,mean_mcmc_ref,color='red',label="Mean MCMC")
+            print ("done MCMC for day {}".format(i))
+        plt.show()
+
+    return t,a
 
 if __name__ == "__main__":
 
-    numOfSlices = 20
-    Acloud = 0.8
-    surf = initialPlanet(numOfSlices,False)
-    clouds = cloudCoverage(numOfSlices)
-    rateDiss = 1/180   #Rate of dissipation of clouds 
-    speedCloud=80000    #Speed at which clouds move. I put it real high for effects for now
-    #plt.ion()          #Responsible for the animations
-    #fig = plt.figure(1,figsize=(12,6))
-
-    #Writer = animation.writers['ffmpeg']
-    #writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
-
-    fastForward=1
-    #sliceInst  =0
-
-    Days = 3
-    weather_creater(numOfSlices,Days,Acloud,surf,clouds,rateDiss,speedCloud,Animation=True)
-
-    #Implement apparent albedo (check with Cowan. but for now it is done)
-    #Implement this as a function (check)
-    #Try and find a way to save this as a gif 
-    #Take data with the satellite of this model
-    #PARAMTRIZE EFFAPP AND EFF
-    """
-    ims = []
-    fakeData = []
-    longitude = np.linspace(2*np.pi*Days,0,24*Days)
-    for i in range(24*Days):
-        sliceInst = sliceInst+1
-        eff,clouds=dynamicMap(i,numOfSlices,Acloud,surf,clouds,rateDiss,speedCloud*fastForward) 
-        effApp = A(eff,i,numOfSlices)
-        if (sliceInst==24*Days+1):
-            break
-        fakeData.append(effApp[sliceInst%numOfSlices])
-        plt.clf()
-        Eckert(effApp,numOfSlices,fig=fig)
-        im = Eckert(effApp,numOfSlices,plot=False,data=True)
-        ims.append(im)
-        print("t =" , i)
-        plt.pause(0.01)
-        
-    g= plt.figure(2)
-    for i in range(3):
-        plt.axvline((i)*2*np.pi,color='red')
-    plt.plot(longitude,fakeData,'.')
-    plt.xlabel("Latitude (rad)")
-    plt.ylabel("Albedo")
-    g.show()
-
-    input()
+    numOfSlices = 8                         #Number of slices 
+    Acloud = 0.8                            #The average albedo of clouds
+    surf = initialPlanet(numOfSlices,False) #Surface albedo of Planet
+    clouds = cloudCoverage(numOfSlices)     #Cloud coverage for each slice 
+    rateDiss = 1/300                        #Average Rate of dissipation of clouds in hours 
+    speedCloud = 126                        #Speed at which clouds move. I put it real high for effects for now (km/h)
+    w = 2*np.pi/(24)                        #Angular frequency of the Earth (rad/h^(-1))
+    ndim = numOfSlices                      #Number of dimensions for MCMC
+    nsamples = 50                           #Number of samples to graph 
+    nwalkers = 1100                         #Number of walkers for MCMC
+    nsteps = 2200                           #Number of steps for MCMC
+    fastForward = 1                         #Speed of how much the dynamic cloud
+    Days = 1                                #Number of days that the model spans 
+    timespan = 1                            #Time span of data (default of 1.0)
+    phispan = 1                             #Fraction of 2pi for the longitude (1 for a full rotation)
+    burnin = 1000                           #Burning period
+    McMc = True                             #Run MCMC on the simulation or not
+    ndata = 22                              #Nnumber of data taken by the satellite
 
 
-    #ani = animation.FuncAnimation(fig,ims, interval=50,repeat_delay=3000,blit=True)
-    #print (ani)
-    #ani.save("test.mp4")
-    """
+    #Running the simulation
+    t,a = runShatelite(numOfSlices,Acloud,rateDiss,speedCloud,w,ndata,fastForward,Days,nwalkers,nsamples,nsteps,timespan,phispan,burnin,plot=True,mcmc=McMc) 
+    
