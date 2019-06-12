@@ -576,7 +576,10 @@ def runShatelite(numOfSlices,Acloud,rateDiss,speedCloud,w,ndata,fastFoward,Days,
     if (mcmc):
         #Implement the MCMC running stuff in a seperate function
         for i in range(1,Days+1):
-            chain  = make_chain(nwalkers,nsteps,ndim,t,a,lon,timespan,phispan,alb=True)
+            time = t[(i-1)*ndata:i*ndata]
+            app = a[(i-1)*ndata:i*ndata]
+            lon = l[(i-1)*numOfSlices:(i)*(numOfSlices)]
+            chain  = make_chain(nwalkers,nsteps,ndim,time,app,lon,timespan,phispan,alb=True)
             print ("Well call me a slave, because I just made some chains for day {}...".format(i))
             mean_mcmc_params = mcmc_results(chain,burning)
             mean_mcmc_time, mean_mcmc_ref = apparentAlbedo(mean_mcmc_params,time_days=timespan,
@@ -612,7 +615,7 @@ if __name__ == "__main__":
     nwalkers = 1100                         #Number of walkers for MCMC
     nsteps = 2200                           #Number of steps for MCMC
     fastForward = 1                         #Speed of how much the dynamic cloud
-    Days = 1                                #Number of days that the model spans 
+    Days = 3                                #Number of days that the model spans 
     timespan = 1                            #Time span of data (default of 1.0)
     phispan = 1                             #Fraction of 2pi for the longitude (1 for a full rotation)
     burnin = 1000                           #Burning period
