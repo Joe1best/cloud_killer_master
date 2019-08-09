@@ -6,6 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import datetime as dt
 import random as ran
+import time as tyme
+import itertools
+
 #test = Dataset("dscovr_single_light_timeseries.nc")
 #print (test.dimensions['y'])
 #print (test.variables['normalized'][:])
@@ -145,50 +148,58 @@ def initialPlanet(numOfSlices,plot=True,nlons=400,nlats=400):
     return planet
 
 
-#Need to build a function that calculates what angles are visible at each hour. 
+#Need to build a function that calculates what angles are visible at each hour.(Done) 
+#Make this general for multiple days
 def visibleAngle(hour,longitudes,Days):
+    #start = tyme.time()
     """
     Function that calculates the angle visible for the satellite depending on the hour 
     Inputs
         hour: hour elapsed in the simulation. 
         longitudes: longitudes slices that are pre-defined beforehand. 
     """
-    hour = [hour*60*60]
+    hour = hour*60*60
     
     currentLon = np.deg2rad(timeToLongitude(hour)) + 2*np.pi*(Days-1)
-    print (currentLon, "current longitude is")
-
-    if np.pi*(Days)< currentLon < 2*np.pi*Days:
+    #print (currentLon, "current longitude is")
+    """
+    if np.pi*(Days) < currentLon < 2*np.pi*Days:
         TwoBound = (currentLon - np.pi/2) + 2*np.pi*(Days-1)
         diff = (2*np.pi-currentLon) + 2*np.pi*(Days-1)
-        OneBound = (np.pi/2 - diff) 
-        #print ("here")
+        OneBound = (np.pi/2 - diff)
+        if OneBound == 0: 
+            OneBound = 2*np.pi 
     elif np.pi*(Days-1) < currentLon < np.pi*(Days):
         OneBound = currentLon + np.pi/2
         diff = np.pi/2 - currentLon
         TwoBound = 2*np.pi - diff
-        #print ("there")
     elif currentLon == 0 or currentLon == 2*np.pi:
         TwoBound = 2*np.pi - np.pi/2
         OneBound = np.pi/2
-        #print ("everywhere")
+    elif currentLon == np.pi:
+        TwoBound = np.pi/2
+        OneBound = 2*np.pi - np.pi/2
     else: 
         print ("why you here nibba")
+    """
+    OneBound = currentLon + np.pi/2
+    TwoBound = currentLon - np.pi/2
 
     if TwoBound < 0:
-        OneBound = 2*np.pi +TwoBound
-    elif OneBound < 0 : 
-        OneBound = 2*np.pi + OneBound
+        TwoBound = 2*np.pi + TwoBound
+    #elif OneBound < 0 : 
+    #    OneBound = 2*np.pi + OneBound
     
-    if TwoBound>2*np.pi*(Days-1):
-        TwoBound = TwoBound%(2*np.pi)
+    #if TwoBound>2*np.pi*(Days-1) and TwoBound != 2*np.pi :
+    #    TwoBound = TwoBound%(2*np.pi)
 
-    if OneBound>2*np.pi*(Days-1):
+    if OneBound>2*np.pi*(Days-1) and OneBound != 2*np.pi:
         OneBound = OneBound%(2*np.pi)
-    
-    return OneBound,TwoBound
+    #print (OneBound,TwoBound)
+    return (OneBound,TwoBound)
 
-
+#do this without for loops
+#Dont need this function!
 def sliceFinder(numOfSlices,bounds,albedo):
     """
     Given the bounds, finds which slices exists within those bounds.
@@ -198,55 +209,57 @@ def sliceFinder(numOfSlices,bounds,albedo):
         albedo: albedo map
     """
     borders = np.linspace(0,2*np.pi,numOfSlices+1)
+    #print (bounds)
     for i in range(numOfSlices):
-        print (i,"slice")
-        print (borders[i],borders[i+1],"the borders of slices")
-        print (bounds[0], bounds[1], "the bounds")
         if np.round(bounds[0],8)>=np.round(borders[i],8) and np.round(bounds[1],8)<=np.round(borders[i+1],8):
-            print ("found your mom")
-            print ("\n")
             return albedo[i] 
 
 #Integral for a single slice.
-def integral(phi,phi_obs,i,albedos):
+#Take out i in the (DONE)
+#Implement the albedo in there with sliceFinder (DONE, Dont need to)
+#Finish commenting code
+def integral(time,VisAngles,w_Earth,phi_obs_0):
+    #start = tyme.time()
     """
     Function that calculates the integral of cosine squared, which is calculated analytically to be 
     the variable "integral" below. This is considered to be the contribution of each slice to the 
     apparent albedo multiplied by some constant. 
 
     Inputs: 
-        i: the ith slice  
         phi: longitude array
         phi_obs: the observer longitude, which is dependent on time 
 
     Output: 
         The integral result of the forward model multiplied by the 4/3*pi constant for each slice. 
     """
-    #print ("input bounds are ", phi)
-    #f.write(''.join(str(phi))+"\n")
+    phi_obs = phi_obs_0 - 1.0*w_Earth*time # SOP longitude at each time
+    starts3 = tyme.time()
 
+    #limits = list(map(lambda t: bounds(t,VisAngles[np.where(time==t)[0][0]],longitudes),time))
+    limits = [bounds(t,VisAngles[x],longitudes) for x, t in enumerate(time)]
+    print ("to calculate the limits in the integral, it take about ", tyme.time()-starts3)
+    #print (limits)
+    lenTime,slices,Z = np.shape(limits)
+    limits = np.transpose(limits,[2,0,1])
     C = (4/(3*np.pi))
-    #if len(phi)%2 == 0 and i%2 !=0: 
-    #    i = i + 1
-    #    j = i + 1
-    #else: 
-    #    j = i+1
-    #if j == len(phi):
-    #    return 0
-    #f.write(''.join(str(j))+"\n")
-    #f.write(''.join(str(i))+"\n")
-    #f.write("\n")
-    a = sliceFinder(len(albedos),phi,albedos)
-    integral = a*((1/2)*(phi[1]-phi[0])+(1/4)*np.sin(2*phi[1]-2*phi_obs)-(1/4)*np.sin(2*phi[0]-2*phi_obs))    
+    x = np.array([phi_obs,]*slices).transpose()
+    integral = ((1/2)*(np.asarray(limits[1]-limits[0]))+
+        (1/4)*np.sin(2*limits[1]-2*x)-
+        (1/4)*np.sin(2*limits[0]-2*x)) 
+     
     return C*integral
 
+#UPDATE THIS TO MAIN CODE
+#FIX SECOND TO HAVE EXACTLY 60*60*24 for now (Done) 
 def timeToLongitude(time):
     """
     Function that converts time since an arbitrary start of the simulation to 
     longitude. Important that the input is in SECONDS. 
     """
-    #print (time)
-    longitude = [(2*np.pi-(t%86148.0)*(2*np.pi/86148.0)) for t in time]
+    if not isinstance(time,list):
+        longitude = np.rad2deg((2*np.pi-(time%86400.0)*(2*np.pi/86400.0)))
+        return longitude
+    longitude = [(2*np.pi-(t%86400.0)*(2*np.pi/86400.0)) for t in time]
     longitude = np.rad2deg(longitude)
     return longitude
 
@@ -314,99 +327,72 @@ def lightcurve(albedos,longitudes,n,time_days=1.0,phi_obs_0=0.0):
 
     return time, lightcurve
 
+def bounds(t,bounds,longitudes):
+    #start = tyme.time()
+    "returns the longitudal bound slice for a given time and limit "
+    Two = bounds[0]
+    One = bounds[1]
+    slices = len(longitudes)-1
+    #trueLon = longitudes
+    def pairwise(iterable):
+        "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+        a, b = itertools.tee(iterable)
+        next(b, None)
+        return zip(a, b)
+    #If the region is including the middle
+    if (One>Two):
+        longitudes = list(filter(lambda x: not Two<=x<=One,longitudes))
+        longitudes.extend([One,Two])
+        longitudes = np.asarray(sorted(longitudes))
+        #rightSide = list(pairwise(iter(sorted(list(filter(lambda x: 0<=x<=np.pi,longitudes))))))
+        rightSide = list(pairwise(iter(longitudes[(longitudes >= 0) & (longitudes<=np.pi)])))
+        """
+        rightSide = longitudes[(longitudes >= 0) & (longitudes<=np.pi)]
+        rightSide = list(zip(rightSide, rightSide[1:] + rightSide[:1]))
+        rightSide.pop()
 
+        leftSide = longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)]
+        leftSide = list(zip(leftSide, leftSide[1:] + leftSide[:1]))
+        del leftSide[0]
+        """
+        
+        
+        #leftSide = list(pairwise(iter(sorted(list(filter(lambda x: np.pi<x<=2*np.pi,longitudes))))))[::-1]
+        leftSide = list(pairwise(iter(longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)])))[::-1]
+        lenLimits = len(rightSide)+len(leftSide)
+        #print ("bounds takes about ", tyme.time()-start)
+        return leftSide+[(0,0)]*(slices-lenLimits)+rightSide  
+    #When the region is not including the middle
+    elif (Two>One):
+        longitudes = list(filter(lambda x: Two>x>One, longitudes))
+        longitudes.extend([One,Two])
+        longitudes = sorted(longitudes)
+        finalLon = list(pairwise(iter(longitudes)))[::-1]
+        #lenLimits = len(finalLon)
+        return [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi)))
+        """
+        if One >= trueLon[1] and Two <= trueLon[-2]:
+            return [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi)))
+        elif Two >= trueLon[-2]:
+            return finalLon + [(0,0)]*(slices-lenLimits) 
+        elif One <= trueLon[1]:
+            return [(0,0)]*(slices-lenLimits) + finalLon 
+        """
 def lightcurve2(albedos,longitudes,n,time_days=1.0,phi_obs_0=0.0):
     """
     Version 2 of the forward model. 
-    """
+    """    
     longitudes.reverse()
     longitudes = np.asarray(longitudes)
-    trueLon = longitudes
-
     time = np.linspace(0, 24*time_days , n , False)
-    
     w_Earth = 2.0*np.pi/24 # Earth's angular velocity 
-    phi_obs = phi_obs_0 - 1.0*w_Earth*time # SOP longitude at each time
-    #f = open("test.txt","w+") 
-
-    #integralResults = []
-
-    diff = 24*time_days/len(albedos)
-    j = 0
-    final = np.zeros([len(albedos),n])
-    
-    for i in range(len(time)):
-        AllLimits = np.zeros([len(albedos),2])
-        #Check this line
-        longitudes = trueLon
-        Two, One = visibleAngle(time[i],longitudes,time_days)
-        print (Two, One, "limit is ")
-        #When true it is in the first case
-        cond = True
-        #for k in range(len(albedo)):
-        #    AllLimits[k][0] = 
-        #    AllLimits[k][1] = 
-
-        #Slice is crossing the middle. Need to split it in 2
-        if (One>Two):
-            longitudes = [x for x in longitudes if not (Two <= x <= One)]
-            print (longitudes,"ostie")
-            longitudes =np.asarray([Two] + longitudes + [One])
-            rightSide = sorted([x for x in longitudes if (0 <= x <= np.pi)])
-            leftSide = sorted([x for x in longitudes if (np.pi < x <= 2*np.pi)])
-            print (rightSide)
-            print (leftSide)
-            cond = True
-        #When the region is not including the middle
-        elif (Two>One):
-            longitudes = [x for x in longitudes if (Two >= x >= One)]
-            longitudes = sorted(np.asarray([One] + longitudes + [Two]))
-            cond = False
-            print (longitudes,"tabarnak")
-
-        #elif(limit[0]>limit[1]):
-        #    longitudes = [x for x in longitudes if (limit[0] >= x >= limit[1])]
-        #    print (longitudes, "tabarnak")
-        #    longitudes = [limit[0]] + longitudes + [limit[1]]
-        #    #longitudes = sorted(longitudes)
-        #    print (longitudes, "tabarnak")
-
-        count = 0 
-        for k in range(len(albedos)):
-            print ("k is ", k)
-            print (longitudes,"update")
-            if cond==True:
-                if k+1-count>=len(leftSide):
-                    break
-                elif k+1>=len(rightSide):
-                    AllLimits[k][0] = leftSide[k-count]
-                    AllLimits[k][1] = leftSide[k-count+1]
-                else:
-                    AllLimits[k][0] = rightSide[k]
-                    AllLimits[k][1] = rightSide[k+1]
-                    count += 1
-                print (AllLimits)
-            else:
-                if k+1 <len(longitudes):
-                    AllLimits[k][0] = longitudes[k]
-                    AllLimits[k][1] = longitudes[k+1]
-                else:
-                    break
-
-        #f.write(''.join(str(time[i]))+"\n")
-        print (time[i])  
-        for l in range(len(albedos)):
-            final[l][i] = integral([AllLimits[l][0],AllLimits[l][1]],phi_obs[i],j,albedos)
-
-        #integralResults.append(integral(longitudes,phi_obs[i],j,albedos))
-    #final = []
-
-    #for i in range(len(albedos)):
-    #    final.append(albedos[i]*np.asarray(integralResults))
-    #f.close()
-    lightcurveR = sum(final)*(3/2)
-    lightcurveR = np.flip(lightcurveR)
-
+    #start1 = tyme.time()
+    VisAngles = list(map(lambda t : visibleAngle(t,longitudes,time_days),time))
+    #print ("VisAngle take about ", tyme.time()-start1)
+    #start2 = tyme.time()  
+    kern = albedos*integral(time,VisAngles,w_Earth,phi_obs_0)
+    lightcurveR = sum(kern.T)*(3/2)
+    #print ("integral takes about ", tyme.time()-start2)
     return time, lightcurveR
 
 def drawAlbedo(albedo,w,numdata):
@@ -439,30 +425,48 @@ def drawAlbedo(albedo,w,numdata):
 
     return x,final
 #lon = []
-numOfSlices = 4
-albedos = [1,1,1,1]
+#albedos = [ran.random() for x in range(4)]
+
+a = np.array([1,2,3,4,5,6])
+Two =1.3
+print (a[a>Two])
+
+
+albedos = [1,1,1,1,0,0,0,0]
+numOfSlices = len(albedos)
+#
+
 albedos1 = [0,0,0,1,1,1]
 longitudes = np.ndarray.tolist(np.linspace(2*np.pi,0,numOfSlices+1))
+start = tyme.time()
 
-hour, alb = drawAlbedo(albedos,2*np.pi/24,100)
-time, light = lightcurve2(albedos,longitudes,1000)
-print (light)
+time, light = lightcurve2(albedos,longitudes,10000)
+print (tyme.time()-start)
+
+hour, alb = drawAlbedo(albedos,2*np.pi/24,1000)
+
+timeComp, lightComp = apparentAlbedo(albedos,alb=True)
+#print (light)
 #time1,light1 = lightcurve2(albedos1,longitudes,10)
 
 fig,ax = plt.subplots(1,1,gridspec_kw={'height_ratios':[1]},figsize=(10,8))
 x = np.linspace(0,24,1000,False)
 
-ax.plot(time,np.round(light,4),'.',label="Simulation result for [0,1]")
+ax.plot(time,np.round(light,6),'.',label="New Lightcurve")
+ax.plot(timeComp,np.round(lightComp,6),'.',label="Old Lightcurve")
+ax.set_title('Result for {}'.format(np.round(albedos,3)),fontsize=22)
 #ax.plot(x,-0.5*np.sin((2*np.pi/24)*x)+0.5,'--',linewidth=7,label="Rough Prediction for [0,1]")
-ax.plot(hour,alb,'--',color='purple',linewidth=6)
+ax.plot(hour,alb,'--',color='purple',linewidth=3,alpha=0.5)
 #ax.plot(time1,light1,'.',label="Simulation result for [1,0]")
 #ax.plot(x,0.5*np.sin((2*np.pi/24)*x)+0.5,'--',linewidth=7,label="Prediction for [1,0]")
 
 ax.set_xlabel("Time (h)",fontsize=22)
 ax.set_ylabel("Apparent Albedo",fontsize=22)
-ax.legend(fontsize=16)
+ax.legend(fontsize=15)
 ax.tick_params(labelsize=22)
 plt.show()
+
+#end = time.time()
 
 
 
