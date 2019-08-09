@@ -182,6 +182,7 @@ def visibleAngle(hour,longitudes,Days):
     else: 
         print ("why you here nibba")
     """
+    
     OneBound = currentLon + np.pi/2
     TwoBound = currentLon - np.pi/2
 
@@ -241,8 +242,10 @@ def integral(time,VisAngles,w_Earth,phi_obs_0):
     #print (limits)
     lenTime,slices,Z = np.shape(limits)
     limits = np.transpose(limits,[2,0,1])
+    print (limits[0])
     C = (4/(3*np.pi))
     x = np.array([phi_obs,]*slices).transpose()
+    #print (x)
     integral = ((1/2)*(np.asarray(limits[1]-limits[0]))+
         (1/4)*np.sin(2*limits[1]-2*x)-
         (1/4)*np.sin(2*limits[0]-2*x)) 
@@ -257,9 +260,9 @@ def timeToLongitude(time):
     longitude. Important that the input is in SECONDS. 
     """
     if not isinstance(time,list):
-        longitude = np.rad2deg((2*np.pi-(time%86400.0)*(2*np.pi/86400.0)))
+        longitude = np.rad2deg((2*np.pi-(time%86148.0)*(2*np.pi/86148.0)))
         return longitude
-    longitude = [(2*np.pi-(t%86400.0)*(2*np.pi/86400.0)) for t in time]
+    longitude = [(2*np.pi-(t%86148.0)*(2*np.pi/86148.0)) for t in time]
     longitude = np.rad2deg(longitude)
     return longitude
 
@@ -327,6 +330,12 @@ def lightcurve(albedos,longitudes,n,time_days=1.0,phi_obs_0=0.0):
 
     return time, lightcurve
 
+def pairwise(iterable):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    a, b = itertools.tee(iterable)
+    next(b, None)
+    return zip(a, b)
+
 def bounds(t,bounds,longitudes):
     #start = tyme.time()
     "returns the longitudal bound slice for a given time and limit "
@@ -334,13 +343,10 @@ def bounds(t,bounds,longitudes):
     One = bounds[1]
     slices = len(longitudes)-1
     #trueLon = longitudes
-    def pairwise(iterable):
-        "s -> (s0,s1), (s1,s2), (s2, s3), ..."
-        a, b = itertools.tee(iterable)
-        next(b, None)
-        return zip(a, b)
     #If the region is including the middle
     if (One>Two):
+        print (t)
+        print (bounds)
         longitudes = list(filter(lambda x: not Two<=x<=One,longitudes))
         longitudes.extend([One,Two])
         longitudes = np.asarray(sorted(longitudes))
@@ -361,7 +367,8 @@ def bounds(t,bounds,longitudes):
         leftSide = list(pairwise(iter(longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)])))[::-1]
         lenLimits = len(rightSide)+len(leftSide)
         #print ("bounds takes about ", tyme.time()-start)
-        return leftSide+[(0,0)]*(slices-lenLimits)+rightSide  
+        print (leftSide+[(0,0)]*(slices-lenLimits)+rightSide, "\n")
+        return leftSide+[(0,0)]*(slices-lenLimits)+rightSide 
     #When the region is not including the middle
     elif (Two>One):
         longitudes = list(filter(lambda x: Two>x>One, longitudes))
@@ -369,6 +376,7 @@ def bounds(t,bounds,longitudes):
         longitudes = sorted(longitudes)
         finalLon = list(pairwise(iter(longitudes)))[::-1]
         #lenLimits = len(finalLon)
+        #print ([(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi))))
         return [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi)))
         """
         if One >= trueLon[1] and Two <= trueLon[-2]:
@@ -378,6 +386,7 @@ def bounds(t,bounds,longitudes):
         elif One <= trueLon[1]:
             return [(0,0)]*(slices-lenLimits) + finalLon 
         """
+
 def lightcurve2(albedos,longitudes,n,time_days=1.0,phi_obs_0=0.0):
     """
     Version 2 of the forward model. 
@@ -391,6 +400,7 @@ def lightcurve2(albedos,longitudes,n,time_days=1.0,phi_obs_0=0.0):
     #print ("VisAngle take about ", tyme.time()-start1)
     #start2 = tyme.time()  
     kern = albedos*integral(time,VisAngles,w_Earth,phi_obs_0)
+    #print (kern)
     lightcurveR = sum(kern.T)*(3/2)
     #print ("integral takes about ", tyme.time()-start2)
     return time, lightcurveR
@@ -429,10 +439,10 @@ def drawAlbedo(albedo,w,numdata):
 
 a = np.array([1,2,3,4,5,6])
 Two =1.3
-print (a[a>Two])
+#print (a[a>Two])
 
 
-albedos = [1,1,1,1,0,0,0,0]
+albedos = [1,0.5,1,0.6]
 numOfSlices = len(albedos)
 #
 
@@ -440,7 +450,7 @@ albedos1 = [0,0,0,1,1,1]
 longitudes = np.ndarray.tolist(np.linspace(2*np.pi,0,numOfSlices+1))
 start = tyme.time()
 
-time, light = lightcurve2(albedos,longitudes,10000)
+time, light = lightcurve2(albedos,longitudes,100)
 print (tyme.time()-start)
 
 hour, alb = drawAlbedo(albedos,2*np.pi/24,1000)

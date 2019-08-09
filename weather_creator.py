@@ -11,6 +11,9 @@ import collections
 import emcee
 import scipy.optimize as op
 import datetime as dt
+import time as tyme
+import itertools
+
 
 #In[]:
 #Intializing the model
@@ -19,7 +22,10 @@ def timeToLongitude(time):
     Function that converts time since an arbitrary start of the simulation to 
     longitude. Important that the input is in SECONDS. 
     """
-    longitude = [(2*np.pi-(t%86148.0)*(2*np.pi/86148.0)) for t in time]
+    if not isinstance(time,list):
+        longitude = np.rad2deg((2*np.pi-(time%86400.0)*(2*np.pi/86400.0)))
+        return longitude
+    longitude = [(2*np.pi-(t%86400.0)*(2*np.pi/86400.0)) for t in time]
     longitude = np.rad2deg(longitude)
     return longitude
 
@@ -40,7 +46,7 @@ def initialPlanet(numOfSlices,plot=True,nlons=400,nlats=400):
     planet = {}
     sliceNum = range(numOfSlices)
     albedo = [0.4*ran.random() for i in range(numOfSlices)] 
-    albedo = [1,1,0,0]
+    #albedo = [1,0.5,1,0.6]
 
     if plot:
         Eckert(albedo,len(albedo))
@@ -60,103 +66,101 @@ def cloudCoverage(numOfSlices):
     """
     booleanSlice = [ran.randint(0,1) for i in range(numOfSlices)]
     clouds = np.zeros(numOfSlices)
-    clouds = [0,0,0,0]
     for i in range(numOfSlices):
         if booleanSlice[i]==1:
             clouds[i] = ran.random()
         else:
             clouds[i] = 0
+    #clouds = [0,0,0,0]
     return clouds
 
 #In[]:
 #Forward model
-def kernel(longitude,phi_obs):
-    """
-    Input: an array of longitudes and the sub-observer longitude phi_obs
-    
-    Computes the kernel K(theta,phi,t) predicted by the forward model.
-    
-    Output: the kernel of the forward model
-    """
-    # I=V in this case since the SOP and SSP are the same at L1, and we choose 
-    # to fix sub-observer/sub-stellar latitude at pi/2 
-    V = np.cos(longitude[...,np.newaxis] - phi_obs)
-    V[V<0] = 0 #set values <0 to be = 0
+def pairwise(iterable):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    a, b = itertools.tee(iterable)
+    next(b, None)
+    return zip(a, b)
 
-    return V*V # K=I*V=V*V
+def bounds(t,bounds,longitudes):
+    "returns the longitudal bound slice for a given time and limit "
+    Two = bounds[0]
+    One = bounds[1]
+    slices = len(longitudes)-1
+    global cond
+    #If the region is including the middle
+    if (One>Two):
+        longitudes = list(filter(lambda x: not Two<=x<=One,longitudes))
+        longitudes.extend([One,Two])
+        longitudes = np.asarray(sorted(longitudes))
+        rightSide = list(pairwise(iter(longitudes[(longitudes >= 0) & (longitudes<=np.pi)])))
+        leftSide = list(pairwise(iter(longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)])))[::-1]
+        lenLimits = len(rightSide)+len(leftSide)
+        finalList1 = leftSide+[(0,0)]*(slices-lenLimits)+rightSide
+        finalList2 = rightSide+[(0,0)]*(slices-lenLimits)+leftSide
+        if cond == 0:
+            return finalList1
+        else: 
+            return finalList2[::-1]
+    #When the region is not including the middle
+    elif (Two>One):
+        cond +=1
+        longitudes = list(filter(lambda x: Two>x>One, longitudes))
+        longitudes.extend([One,Two])
+        longitudes = sorted(longitudes)
+        finalLon = list(pairwise(iter(longitudes)))[::-1]
+        finalList = [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi))) 
+        return finalList
 
-def integral(phi,phi_obs,albedos):
+def integral(time,VisAngles,w_Earth,phi_obs_0,longitudes):
     """
     Function that calculates the integral of cosine squared, which is calculated analytically to be 
     the variable "integral" below. This is considered to be the contribution of each slice to the 
     apparent albedo multiplied by some constant. 
 
     Inputs: 
-        i: the ith slice  
         phi: longitude array
         phi_obs: the observer longitude, which is dependent on time 
 
     Output: 
         The integral result of the forward model multiplied by the 4/3*pi constant for each slice. 
     """
+    phi_obs = phi_obs_0 - 1.0*w_Earth*time # SOP longitude at each time
+    limits = [bounds(t,VisAngles[x],longitudes) for x, t in enumerate(time)]
+    lenTime,slices,Z = np.shape(limits)
+    limits = np.transpose(limits,[2,0,1])
     C = (4/(3*np.pi))
-    a = sliceFinder(len(albedos),phi,albedos)
-    integral = a*((1/2)*(phi[1]-phi[0])+(1/4)*np.sin(2*phi[1]-2*phi_obs)-(1/4)*np.sin(2*phi[0]-2*phi_obs))    
+    x = np.array([phi_obs,]*slices).transpose()
+    integral = ((1/2)*(np.asarray(limits[1]-limits[0]))+
+        (1/4)*np.sin(2*limits[1]-2*x)-
+        (1/4)*np.sin(2*limits[0]-2*x)) 
+     
     return C*integral
 
 def visibleAngle(hour,longitudes,Days):
+    #start = tyme.time()
     """
     Function that calculates the angle visible for the satellite depending on the hour 
     Inputs
         hour: hour elapsed in the simulation. 
         longitudes: longitudes slices that are pre-defined beforehand. 
     """
-    hour = [hour*60*60]
+    hour = hour*60*60
     
     currentLon = np.deg2rad(timeToLongitude(hour)) + 2*np.pi*(Days-1)
-
-    if np.pi*(Days)< currentLon < 2*np.pi*Days:
-        TwoBound = (currentLon - np.pi/2) + 2*np.pi*(Days-1)
-        diff = (2*np.pi-currentLon) + 2*np.pi*(Days-1)
-        OneBound = (np.pi/2 - diff) 
-    elif np.pi*(Days-1) < currentLon < np.pi*(Days):
-        OneBound = currentLon + np.pi/2
-        diff = np.pi/2 - currentLon
-        TwoBound = 2*np.pi - diff
-    elif currentLon == 0 or currentLon == 2*np.pi:
-        TwoBound = 2*np.pi - np.pi/2
-        OneBound = np.pi/2
-    else: 
-        print ("Something went wrong, code stopping")
-
-    if TwoBound < 0:
-        OneBound = 2*np.pi +TwoBound
-    elif OneBound < 0 : 
-        OneBound = 2*np.pi + OneBound
+ 
+    OneBound = currentLon + np.pi/2
+    TwoBound = currentLon - np.pi/2
     
-    if TwoBound>2*np.pi*(Days-1):
-        TwoBound = TwoBound%(2*np.pi)
+    if TwoBound < 0:
+        TwoBound = 2*np.pi + TwoBound
 
-    if OneBound>2*np.pi*(Days-1):
+    if OneBound>2*np.pi*(Days-1) and OneBound != 2*np.pi:
         OneBound = OneBound%(2*np.pi)
     
-    return OneBound,TwoBound
+    return (OneBound,TwoBound)
 
-def sliceFinder(numOfSlices,bounds,albedo):
-    """
-    Given the bounds, finds which slices exists within those bounds.
-    Input: 
-        numOfSlices: number of slices in the model
-        bounds: the TWO bounds of the integral 
-        albedo: albedo map
-    """
-    borders = np.linspace(0,2*np.pi,numOfSlices+1)
-    for i in range(numOfSlices):
-        if np.round(bounds[0],6)>=np.round(borders[i],6) and np.round(bounds[1],6)<=np.round(borders[i+1],6):
-            return albedo[i] 
-    raise Exception('Could not find the albedo between {} and {}. The borders were {} and {}. Something fishy going on here...'.format(bounds[0],bounds[1],borders[i],borders[i+1]))
-
-def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0, 
+def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=1000, phi_obs_0=0.0, 
                plot=False, alb=False, ndata=None): 
     """ 
     Input: an array of albedos, the time in days which the model should span
@@ -172,66 +176,20 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0
     
     Output: the lightcurve, in units of reflectance or apparent albedo 
     """
-    numOfSlices = len(albedos)
     longitudes = np.ndarray.tolist(np.linspace(2*np.pi,0,numOfSlices+1))
-
     longitudes.reverse()
     longitudes = np.asarray(longitudes)
-    trueLon = longitudes
-
     time = np.linspace(0, 24*time_days , n , False)
-    
     w_Earth = 2.0*np.pi/24 # Earth's angular velocity 
-    phi_obs = phi_obs_0 - 1.0*w_Earth*time # SOP longitude at each time
+    #start1 = tyme.time()
 
-    final = np.zeros([len(albedos),n])
-    
-    for i in range(len(time)):
-        AllLimits = np.zeros([len(albedos),2])
-        
-        #Check this line
-        longitudes = trueLon
-        Two, One = visibleAngle(time[i],longitudes,time_days)
-        cond = True
-    
-        #Slice is crossing the middle. Need to split it in 2
-        if (One>Two):
-            longitudes = [x for x in longitudes if not (Two <= x <= One)]
-            longitudes = np.asarray([Two] + longitudes + [One])
-            rightSide = sorted([x for x in longitudes if (0 <= x <= np.pi)])
-            leftSide = sorted([x for x in longitudes if (np.pi < x <= 2*np.pi)])
-            cond = True
-        #When the region is not including the middle
-        elif (Two>One):
-            longitudes = [x for x in longitudes if (Two >= x >= One)]
-            longitudes = sorted(np.asarray([One] + longitudes + [Two]))
-            cond = False
-
-        count = 0 
-        for k in range(len(albedos)):
-            if cond==True:
-                if k+1-count>=len(leftSide):
-                    break
-                elif k+1>=len(rightSide):
-                    AllLimits[k][0] = leftSide[k-count]
-                    AllLimits[k][1] = leftSide[k-count+1]
-                else:
-                    AllLimits[k][0] = rightSide[k]
-                    AllLimits[k][1] = rightSide[k+1]
-                    count += 1
-            else:
-                if k+1 <len(longitudes):
-                    AllLimits[k][0] = longitudes[k]
-                    AllLimits[k][1] = longitudes[k+1]
-                else:
-                    break
-            final[k][i] = integral([AllLimits[k][0],AllLimits[k][1]],phi_obs[i],albedos)
-
-    lightcurveR = sum(final)
-    if alb: 
-        lightcurveR = lightcurveR*(3/2)
-    #lightcurveR = np.flip(lightcurveR)
-
+    VisAngles = list(map(lambda t : visibleAngle(t,longitudes,time_days),time))
+    #print ("VisAngle take about ", tyme.time()-start1)
+    #start2 = tyme.time()  
+    kern = albedos*integral(time,VisAngles,w_Earth,phi_obs_0,longitudes)
+    #print (kern)
+    lightcurveR = sum(kern.T)*(3/2)
+    #print ("integral takes about ", tyme.time()-start2)
     return time, lightcurveR
 
 def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,plot=True,data=False):
@@ -423,6 +381,8 @@ def lnlike(alpha, time,ref, ref_err,timespan,phispan):
     #phispan = timespan # longitude spanned, as a fraction of 2pi
     
     # obtain model prediction, in units of apparent albedo
+    global cond
+    cond  = 0 
     model_time, model_ref = apparentAlbedo(alpha, timespan, phispan, timepts, 
                                        0, plot=False, alb=True) 
     
@@ -930,7 +890,6 @@ def runSatellowan(numOfSlices,Acloud,npara,rateDiss,speedCloud,w,ndata,fastFowar
     if (numOfSlices>24):
         print ("Cannot have more than 24 number of slices for now")
         return 0,0
-    print (numOfSlices)
     surfDict = initialPlanet(numOfSlices,plot=True)
     surf = np.fromiter(surfDict.values(),dtype=float)
     print ("The planet's surface albedo is theoritically", surf)
@@ -946,11 +905,11 @@ def runSatellowan(numOfSlices,Acloud,npara,rateDiss,speedCloud,w,ndata,fastFowar
 
     for i in range(1,Days+1):
         effective = d[(i-1)*numOfSlices:(i)*(numOfSlices)] 
-        print (effective,"herehehrehrherheh")
         print("The albedo map for day {} is ".format(i-1), effective)
         #lon = l[(i-1)*numOfSlices:(i)*(numOfSlices)]
         #print (effective)
         #print ("Longitude is ", lon)
+        #cond = 0 
         time, apparent = apparentAlbedo(effective,time_days=timespan,
                 long_frac=phispan,n=10000,plot=False,alb=True)
         finalTime.append(time+(hPerDay*(i-1)))
@@ -994,6 +953,8 @@ def runSatellowan(numOfSlices,Acloud,npara,rateDiss,speedCloud,w,ndata,fastFowar
             chainArray.append(chain)
             print ("Well call me a slave, because I just made some chains for day {}...".format(i))
             mean_mcmc_params = mcmc_results(chain,burning)
+            global cond
+            cond = 0 
             mean_mcmc_time, mean_mcmc_ref = apparentAlbedo(mean_mcmc_params,time_days=timespan,
                 long_frac=phispan,n=1000,plot=False,alb=True)
             print ("Got the mean MCMC results for day {}. Ya YEET!".format(i))
@@ -1001,6 +962,7 @@ def runSatellowan(numOfSlices,Acloud,npara,rateDiss,speedCloud,w,ndata,fastFowar
             flat = flatten_chain(chain,burning)
             sample_params = flat[np.random.randint(len(flat),size=nsamples)]
             for s in sample_params:
+                cond = 0
                 sample_time,sample_ref = apparentAlbedo(s,time_days=timespan,long_frac=phispan,n=1000,plot=False,alb=True)
                 sample_time = np.asarray(sample_time)
                 mean_mcmc_params = np.asarray(mean_mcmc_params)
@@ -1095,7 +1057,7 @@ def drawAlbedo(albedo,w,numdata):
     
     final = np.asarray(albhour)*4/(slices)
 
-    return np.flip(x),final
+    return x,final
 
 def minimumAlb(albedos):
     """
@@ -1127,6 +1089,7 @@ if __name__ == "__main__":
     #SEE IF I CAN EXTRACT THE TIME CHANGE dissipation. HOW I CAN FIT FOR THAT
     #Add a verbose option
     #A lot of parameters eh 
+    cond = 0
     numOfSlices = 4                          #Number of slices 
     Acloud = 0.8                             #The average albedo of clouds
     #surf = initialPlanet(numOfSlices,False) #Surface albedo of Planet
