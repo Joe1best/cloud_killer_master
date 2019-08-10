@@ -1,3 +1,5 @@
+#In[]:
+#Importing packages
 import numpy as np 
 import matplotlib.pyplot as plt 
 import random as ran
@@ -94,7 +96,7 @@ def bounds(t,bounds,longitudes):
         longitudes.extend([One,Two])
         longitudes = np.asarray(sorted(longitudes))
         rightSide = list(pairwise(iter(longitudes[(longitudes >= 0) & (longitudes<=np.pi)])))
-        leftSide = list(pairwise(iter(longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)])))[::-1]
+        leftSide  = list(pairwise(iter(longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)])))[::-1]
         lenLimits = len(rightSide)+len(leftSide)
         finalList1 = leftSide+[(0,0)]*(slices-lenLimits)+rightSide
         finalList2 = rightSide+[(0,0)]*(slices-lenLimits)+leftSide
@@ -137,31 +139,38 @@ def integral(time,VisAngles,w_Earth,phi_obs_0,longitudes):
      
     return C*integral
 
-def visibleAngle(hour,longitudes,Days):
-    #start = tyme.time()
+def visibleLong(hour,longitudes):
     """
-    Function that calculates the angle visible for the satellite depending on the hour 
-    Inputs
+    Function that calculates the longitudes visible from the point of view of the observer 
+    depending on the time 
+    Inputs:
         hour: hour elapsed in the simulation. 
-        longitudes: longitudes slices that are pre-defined beforehand. 
+        longitudes: longitudes slices that are pre-defined beforehand.
+    Output:
+        The two bounds of longitudes that are visible at each extreme at any given time.
     """
-    hour = hour*60*60
+
+    #The current longitude at time "hour"
+    currentLon = np.deg2rad(timeToLongitude(hour*60*60)) 
     
-    currentLon = np.deg2rad(timeToLongitude(hour)) + 2*np.pi*(Days-1)
- 
+    #The two bounds of longitude visible at time "hour". This is assuming half the 
+    #planet is visible at any given point in time 
     OneBound = currentLon + np.pi/2
     TwoBound = currentLon - np.pi/2
     
+    #Special cases for the two bounds:
+    #   If TwoBound is negative, just change that into the positive equivalent
+    #   Since the max is 2pi, if OneBound is above it, we restart the longitude back to 0
     if TwoBound < 0:
         TwoBound = 2*np.pi + TwoBound
 
-    if OneBound>2*np.pi*(Days-1) and OneBound != 2*np.pi:
+    if OneBound>2*np.pi and OneBound != 2*np.pi:
         OneBound = OneBound%(2*np.pi)
     
     return (OneBound,TwoBound)
 
-def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=1000, phi_obs_0=0.0, 
-               plot=False, alb=False, ndata=None): 
+def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0, 
+               plot=False, alb=False): 
     """ 
     Input: an array of albedos, the time in days which the model should span
     (default: 1.0), the longitude as a fraction of 2pi which the model should 
@@ -176,20 +185,32 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=1000, phi_obs_0=0.0,
     
     Output: the lightcurve, in units of reflectance or apparent albedo 
     """
-    longitudes = np.ndarray.tolist(np.linspace(2*np.pi,0,numOfSlices+1))
-    longitudes.reverse()
-    longitudes = np.asarray(longitudes)
+    #Gridlines generated depending on the number of slices
+    longitudes = np.linspace(0,2*np.pi*long_frac,numOfSlices+1)
+    
+    #Time elapsed in hours  
     time = np.linspace(0, 24*time_days , n , False)
     w_Earth = 2.0*np.pi/24 # Earth's angular velocity 
-    #start1 = tyme.time()
+    
+    #Calculates the extreme longitudes visible at each time 
+    VisLongs = list(map(lambda t : visibleLong(t,longitudes),time))
+     
+    #Computes the kernel multiplied by the albedo
+    kern = albedos*integral(time,VisLongs,w_Earth,phi_obs_0,longitudes)
+    lightcurveR = sum(kern.T)
+    if alb:
+        lightcurveR *= 3/2
+    
+    if plot:
+        fig,ax = plt.subplots(1,1,gridspec_kw={'height_ratios':[1]},figsize=(10,8))
+        ax.plot(time,np.round(lightcurveR,6),'.',color='red')
+        if alb:
+            ax.set_ylabel("Apparent Albedo $(A^*)$")
+        else: 
+            ax.set_ylabel("Reflectance")
+        ax.set_xlabel("time (h)")
+        plt.show()
 
-    VisAngles = list(map(lambda t : visibleAngle(t,longitudes,time_days),time))
-    #print ("VisAngle take about ", tyme.time()-start1)
-    #start2 = tyme.time()  
-    kern = albedos*integral(time,VisAngles,w_Earth,phi_obs_0,longitudes)
-    #print (kern)
-    lightcurveR = sum(kern.T)*(3/2)
-    #print ("integral takes about ", tyme.time()-start2)
     return time, lightcurveR
 
 def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,plot=True,data=False):
