@@ -16,56 +16,59 @@ import datetime as dt
 import time as tyme
 import itertools
 
-
 #In[]:
 #Intializing the model
 def timeToLongitude(time):
     """
-    Function that converts time since an arbitrary start of the simulation to 
-    longitude. Important that the input is in SECONDS. 
+    Function that converts time elapsed since an arbitrary start 
+    of the simulation to longitude. 
+    Input(s): 
+        time: time elapsed in SECONDS
+    Ouput(s):
+        longitude: if input is a list, returns a list of longitudes
+        else, returns a value. Both cases in DEGREES.
     """
     if not isinstance(time,list):
         longitude = np.rad2deg((2*np.pi-(time%86400.0)*(2*np.pi/86400.0)))
         return longitude
-    longitude = [(2*np.pi-(t%86400.0)*(2*np.pi/86400.0)) for t in time]
-    longitude = np.rad2deg(longitude)
+    longitude = [np.rad2deg((2*np.pi-(t%86400.0)*(2*np.pi/86400.0))) for t in time]
     return longitude
 
-def longitudeToTime(longitude):
-    time = [(2*np.pi-l)/(2*np.pi/86148.0) for l in longitude]
-    return time
-
-def initialPlanet(numOfSlices,plot=True,nlons=400,nlats=400):
+def initialPlanet(numOfSlices,plot=True):
     """
-    Function that takes an input of the number of longitudal slices used and outputs the 
-    corresponding longitudes. It also generates a random albedo for the surface at each 
-    slice. 
-    Also takes a boolean input plot (default to True) depending on whether plotting is 
-    desired or not. 
+    Initializes surface map of an arbitrary planet with random values
+    of albedos. The surface map will be divided into the given number
+    of slices. 
+    Input(s):
+        numOfSlices: number of slices of the simulation
+        plot (Default to TRUE): if TRUE, will plot a Eckert projection
+                                map of the generated map
+    Output(s): 
+        A dictionary of albedo and slice number. See github documenta-
+        tion for how the slices are defined.  
     """
-    #time = np.linspace(0,86400,nlons)
-    #longitude = np.rad2deg(((2*np.pi-time%86400)*(2*np.pi/86400))%2*np.pi)
     planet = {}
     sliceNum = range(numOfSlices)
     albedo = [0.4*ran.random() for i in range(numOfSlices)] 
-    #albedo = [1,0.5,1,0.6]
 
     if plot:
         Eckert(albedo,len(albedo))
         plt.show()
     for i in sliceNum:
         planet[i] = albedo[i]
-    
     return planet
 
 def cloudCoverage(numOfSlices):
     """
-    Function that generates a cloud coverage, and calculates its effect on the albedo generated
-    using initialPlanet.
-
-    Outputs: random values for each slice that ranges from 0 to 1. 1 being total cloud cover 
-    and 0 having no clouds. 
+    Function that generates an initial cloud coverage over the slices. 
+    Input(s):
+        nmOfSlices: Number of slices
+    Output(s): 
+        Random values of cloud coverage ranging from 0 to 1. "1" being
+        complete cloud cover and 0 having no clouds. 
     """
+    #If boolean Slice is 1, it will generate a random value between 0 and 1
+    #on that slice, else it wont generate cloud over that slice. 
     booleanSlice = [ran.randint(0,1) for i in range(numOfSlices)]
     clouds = np.zeros(numOfSlices)
     for i in range(numOfSlices):
@@ -73,17 +76,11 @@ def cloudCoverage(numOfSlices):
             clouds[i] = ran.random()
         else:
             clouds[i] = 0
-    #clouds = [0,0,0,0]
     return clouds
 
 #In[]:
 #Forward model
-def pairwise(iterable):
-    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
-    a, b = itertools.tee(iterable)
-    next(b, None)
-    return zip(a, b)
-
+#NEED TO WORK ON THIS SHIT
 def bounds(t,bounds,longitudes):
     "returns the longitudal bound slice for a given time and limit "
     Two = bounds[0]
@@ -116,23 +113,39 @@ def bounds(t,bounds,longitudes):
 
 def integral(time,VisAngles,w_Earth,phi_obs_0,longitudes):
     """
-    Function that calculates the integral of cosine squared, which is calculated analytically to be 
-    the variable "integral" below. This is considered to be the contribution of each slice to the 
-    apparent albedo multiplied by some constant. 
-
-    Inputs: 
-        phi: longitude array
-        phi_obs: the observer longitude, which is dependent on time 
-
-    Output: 
-        The integral result of the forward model multiplied by the 4/3*pi constant for each slice. 
+    Calculates the integral of cosine squared, which is analytically the 
+    variable "integral" below. 
+    Input(s): 
+        time: a time array (in HOURS. If need to change to MINUTES OR SECONDS, 
+              need to change the "w_Earth" variable.)
+        VisAngles: The two East and West terminators given as a TUPLE. This is 
+                   calculated from "visibleLong" function defined below.
+        w_Earth: Angular frequency of the Planet (in units RAD/HOUR. Again needs
+                 to be the same units as "time").
+        phi_obs_0 (Default to 0): initial sub-observer point
+        longitudes: Longitudes defined when slicing the Planet (in RAD).
+    Output(s): 
+        The integral result predicted by the forward model multiplied by 
+        the 4/3*pi constant at a given time t. (See documentation for 
+        derivation). 
     """
     phi_obs = phi_obs_0 - 1.0*w_Earth*time # SOP longitude at each time
+    
+    #Longitude bounds for each slice
     limits = [bounds(t,VisAngles[x],longitudes) for x, t in enumerate(time)]
-    lenTime,slices,Z = np.shape(limits)
+    lenTime,slices,Z = np.shape(limits) #Just need the number of slices
+
+    #Transposing the longitude bounds for a given time t such that the upper
+    #bounds are in one element and the lower bound are in the other
     limits = np.transpose(limits,[2,0,1])
+    
     C = (4/(3*np.pi))
+
+    #Fixing the size of the SOP longitude at each time in order to get it to 
+    #the same size as "limits".
     x = np.array([phi_obs,]*slices).transpose()
+
+    #The final integral given a time t.
     integral = ((1/2)*(np.asarray(limits[1]-limits[0]))+
         (1/4)*np.sin(2*limits[1]-2*x)-
         (1/4)*np.sin(2*limits[0]-2*x)) 
@@ -141,26 +154,27 @@ def integral(time,VisAngles,w_Earth,phi_obs_0,longitudes):
 
 def visibleLong(hour,longitudes):
     """
-    Function that calculates the longitudes visible from the point of view of the observer 
-    depending on the time 
-    Inputs:
-        hour: hour elapsed in the simulation. 
+    Computes the East and West terminators given the hour.
+    Input(s):
+        hour: hour elapsed in the simulation (just a value). 
         longitudes: longitudes slices that are pre-defined beforehand.
-    Output:
-        The two bounds of longitudes that are visible at each extreme at any given time.
+    Output(s):
+        the East and West terminators (as a TUPLE).
     """
 
     #The current longitude at time "hour"
     currentLon = np.deg2rad(timeToLongitude(hour*60*60)) 
     
-    #The two bounds of longitude visible at time "hour". This is assuming half the 
-    #planet is visible at any given point in time 
+    #The two terminators visible at time "hour". This is assuming half
+    #the planet is visible at any given point in time 
     OneBound = currentLon + np.pi/2
     TwoBound = currentLon - np.pi/2
     
     #Special cases for the two bounds:
-    #   If TwoBound is negative, just change that into the positive equivalent
-    #   Since the max is 2pi, if OneBound is above it, we restart the longitude back to 0
+    #   If TwoBound is negative, just change that into the positive 
+    #       equivalent
+    #   Since the max is 2pi, if OneBound is above it, we restart 
+    #       the longitude back to 0
     if TwoBound < 0:
         TwoBound = 2*np.pi + TwoBound
 
@@ -190,7 +204,7 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0
     
     #Time elapsed in hours  
     time = np.linspace(0, 24*time_days , n , False)
-    w_Earth = 2.0*np.pi/24 # Earth's angular velocity 
+    w_Earth = 2.0*np.pi/24 # Earth's angular velocity in RAD/HOURS 
     
     #Calculates the extreme longitudes visible at each time 
     VisLongs = list(map(lambda t : visibleLong(t,longitudes),time))
@@ -201,6 +215,7 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0
     if alb:
         lightcurveR *= 3/2
     
+    #Plotting the result if the plot variable is TRUE.
     if plot:
         fig,ax = plt.subplots(1,1,gridspec_kw={'height_ratios':[1]},figsize=(10,8))
         ax.plot(time,np.round(lightcurveR,6),'.',color='red')
@@ -213,13 +228,27 @@ def apparentAlbedo(albedos, time_days=1.0, long_frac=1.0, n=10000, phi_obs_0=0.0
 
     return time, lightcurveR
 
-def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,plot=True,data=False):
+#NEED TO COMMENT ON THIS SHITTY FUNCTION
+def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,
+    plot=True):
     """
-    General function to plot the Eckert map based off the number of slices
-    Inputs:
-        albedo: takes in the albedo value at each longitudinal slices
-        numOfSlices: number of longitudinal slices
-    Output: EckertIV map projection of the results for a general number of slices.
+    General function to plot the Eckert map based off the number of 
+    slices
+    Input(s):
+        albedo: takes in the albedo value at each longitudinal slices.
+        numOfSlices: number of longitudinal slices.
+        nlats, nlons = Used for the contour function. Basically, how 
+                       many points to plot in the Eckert projection. 
+                       (Default to 400, I do not recommend changing it!)
+        fig (Default to None): This is for animation, since the animation function updates
+             the fig, it needs the previous iteration. 
+        bar (Default to None): The color bar on the side. Again for the animation to keep 
+             the bar constant and not changing between frames.
+        plot (Default to TRUE): if TRUE, plots the Eckert project, else
+             returns longitudes, gridlines and the albedos. 
+    Output(s): 
+        EckertIV map projection of the results for a general number 
+        of slices.
     """
     mod = nlons%numOfSlices 
     if (mod==0):
@@ -272,16 +301,31 @@ def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,plot=True,da
 
 def effectiveAlbedo(numOfSlices,Acloud,plot=True,calClouds=None,calsurf=None):
     """
-    Function that calculates the effective albedo of a longitudinal slice with cloud 
+    Computes the effective albedo of a longitudinal slice with cloud 
     coverage taken into account. 
-
-    If the cloud coverage is 0, then the albedo is just the albedo of the surface. If 
-    there is cloud coverage, then we weight the cloud albedo with the surface albedo. 
+    Input(s):
+        numOfSlices: number of longitudal slices
+        Acloud: the average albedo of clouds (usually around 0.8)
+        plot (Default to TRUE): if TRUE, will plot an Eckert projection
+             of the effective albedo.  
+        calClouds (Default to NONE): if None, will generate a cloud map 
+        calsurf (Default to NONE): if None, will generate a surface map
+        
+        For both inputs above, if they are given, will use those instead 
+        of generating new ones (both inputs as arrays)
+    Output(s):
+        An array of effective albedo.
     """
+    #If no maps are given as an inputs, generate them. 
     if type(calClouds)==type(None):
         clouds = cloudCoverage(numOfSlices)
         surfAlb = initialPlanet(numOfSlices,False)
+        
+        #Function that describes the effective albedo given a surface albedo
+        #and the cloud coverage over that slice. 
         effAlb = [clouds[i]*(1-(1-Acloud)*(1-surfAlb[i]))+(1-clouds[i])*surfAlb[i] for i in range(numOfSlices)]
+        
+        #Plotting the Eckert projection
         if plot: 
             Eckert(effAlb,numOfSlices)
             plt.show()
@@ -292,40 +336,38 @@ def effectiveAlbedo(numOfSlices,Acloud,plot=True,calClouds=None,calsurf=None):
 
 # In[]:
 #Cloud model & earth rotation
-def dissipate(cloudIn,time,rate,scale="minutes"):
+def dissipate(cloudIn,rate):
     """
-    Function that dissipates the intensity of cloud with each iteration of time. I am 
-    assuming that on average, the clouds dissipate from 100 to 0 in three hours 
-    (10 800s or 180min). ASSUMING A LINEAR MODEL FOR NOW (WHICH IS PROBABLY INACCURATE).
-
-    The rate should be given in the same units as scale
+    Function that dissipates the intensity of cloud (linearly, as an assumption) 
+    with each time the function is called.
+    Input(s):
+        cloudIn: The input cloud array that will recursively get updated.  
+        rate: rate at which the clouds dissipate over time. On average, clouds 
+              take about 3 hours to dissipate, so the rate will be 1/3. This 
+              of course depends on the type of clouds, composition,etc. but this 
+              is a very simple model.
+    Output(s): 
+        None. Updates the given cloudIn array. 
     """  
     for i in range(len(cloudIn)):
         if cloudIn[i] <= 0:
             cloudIn[i] = 0 
         else:
-            if scale=="minutes":
-                cloudIn[i] = cloudIn[i] - rate
-                #np.abs(ran.gauss(rate,30))
-            elif scale=="hours":
-                cloudIn[i] = cloudIn[i] - rate
-                #np.abs(ran.gauss(rate,0.5))
-            else:
-                cloudIn[i] = cloudIn[i] - rate
-                #np.abs(ran.gauss(rate,1800))
+            cloudIn[i] = cloudIn[i] - rate
             if cloudIn[i] <= 0:
                 cloudIn[i] = 0
 
-def form(cloudIn,time,scale="minutes"):
+def form(cloudIn):
     """
-    Function that forms clouds with each iteration of time. The cloud generation process
-    takes about from 1 minute to sevral hours. So I will just generate a rate gaussian 
-    with a mean of 1 hour and a standard deviation 
-    
-    Need to make sure that cloud coverage in each slice does not exceed 1.
+    Forms clouds with each function call. The cloud generation process
+    takes about from 1 minute to several hours. Therefore, as a temporary 
+    phenomenon, only if the clouds in a slice have reached 0 will it then 
+    form a random cloud coverage.
+    Input(s):
+        cloudIn: the cloud coverage array.
+    Output(s):
+        None. Updates the cloud array at each iteration. 
 
-    NEED TO IMPLEMENT FORMATION EVEN IF THERE ARE NO CLOUDS.
-    
     """
     for i in range(len(cloudIn)):
         if cloudIn[i] == 0:
@@ -335,13 +377,20 @@ def form(cloudIn,time,scale="minutes"):
 
 def move(cloudIn,time,speed):
     """
-    Function that moves the clouds from East to West. Important to note, that with the
-    definition of longitude of the eckert maps, the first array value starts at the 
-    left middle slice and goes westerwards, wraps around the other side and back to 
-    the right middle slice. However, clouds move the other way, hence depending on the 
-    speed, the index will shift upwards. 
+    Function that moves the clouds. What this means in code is that it 
+    will shift all the elements of the array to the left (first element 
+    becomes last element), since clouds on average move from right
+    to left (from East to West). See documentation for more details
+    Input(s):
+        cloudIn: the cloud array
+        time: time elapsed since start of simulation
+        speed: average speed of clouds.
+    The last two inputs HAVE to be in the same units of time with units 
+    of KM for distance. 
+    Output(s):
+        the cloud array.
     """
-    disSlice = 40070/len(cloudIn)        #distance of each slice
+    disSlice = 40070/len(cloudIn)        #lenght of each slice 
     timeSlice = int(disSlice/speed)    #time of each slice 
     if timeSlice==0 or ((time%timeSlice) == 0 and time !=0):
         cloudIn = np.roll(cloudIn,1)
@@ -349,11 +398,11 @@ def move(cloudIn,time,speed):
 
 def dynamicMap(time,numOfSlices,Acloud,surfAlb,cloudIn,rateDiss,speedCloud,forming=True):
     """
-    Function that changes the cloud dynamically per iteration. Changes every hour
+    
     """
-    dissipate(cloudIn,time,rateDiss)
+    dissipate(cloudIn,rateDiss)
     if (forming):
-        form(cloudIn,time)
+        form(cloudIn)
     cloudIn = move(cloudIn,time,speedCloud)
     effAlb=effectiveAlbedo(numOfSlices,Acloud,False,calClouds=cloudIn,calsurf=surfAlb)
     return effAlb,cloudIn
@@ -1089,10 +1138,8 @@ def minimumAlb(albedos):
     minimum = [min(albedoSlice[i]) for i in range(nslice)]
     return minimum
 
-
 #In[]
 #Utilities
-
 def roll(Dict,shift):
     slices = np.fromiter(Dict.keys(), dtype=int)
     albedo = np.fromiter(Dict.values(),dtype=float)
@@ -1102,6 +1149,12 @@ def roll(Dict,shift):
     for i in slices:
         Dict[i] = albedo[i]
     return Dict
+
+def pairwise(iterable):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    a, b = itertools.tee(iterable)
+    next(b, None)
+    return zip(a, b)
 
 #In[]:
 #Main method
