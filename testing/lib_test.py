@@ -13,8 +13,6 @@ import os
 import sys
 sys.path.insert(0, 'C:\\Users\\joebe\\Desktop\\Research Project 2019\\cloud_killer-master\\cloud_killer_master')
 
-print (sys.path)
-
 import cloud_killer_lib as ck_lib
 
 plt.switch_backend('Qt4Agg')

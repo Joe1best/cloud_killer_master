@@ -8,6 +8,8 @@ import datetime as dt
 import random as ran
 import time as tyme
 import itertools
+import cartopy.crs as ccrs
+
 
 #test = Dataset("dscovr_single_light_timeseries.nc")
 #print (test.dimensions['y'])
@@ -150,13 +152,15 @@ def initialPlanet(numOfSlices,plot=True,nlons=400,nlats=400):
 
 #Need to build a function that calculates what angles are visible at each hour.(Done) 
 #Make this general for multiple days
-def visibleAngle(hour,longitudes,Days):
+def visibleAngle(hour,Days):
     #start = tyme.time()
     """
     Function that calculates the angle visible for the satellite depending on the hour 
-    Inputs
+    Input(s):
         hour: hour elapsed in the simulation. 
         longitudes: longitudes slices that are pre-defined beforehand. 
+    Output(s):
+
     """
     hour = hour*60*60
     
@@ -185,7 +189,7 @@ def visibleAngle(hour,longitudes,Days):
     
     OneBound = currentLon + np.pi/2
     TwoBound = currentLon - np.pi/2
-
+    
     if TwoBound < 0:
         TwoBound = 2*np.pi + TwoBound
     #elif OneBound < 0 : 
@@ -197,7 +201,8 @@ def visibleAngle(hour,longitudes,Days):
     if OneBound>2*np.pi*(Days-1) and OneBound != 2*np.pi:
         OneBound = OneBound%(2*np.pi)
     #print (OneBound,TwoBound)
-    return (OneBound,TwoBound)
+    
+    return [OneBound,TwoBound]
 
 #do this without for loops
 #Dont need this function!
@@ -219,38 +224,35 @@ def sliceFinder(numOfSlices,bounds,albedo):
 #Take out i in the (DONE)
 #Implement the albedo in there with sliceFinder (DONE, Dont need to)
 #Finish commenting code
-def integral(time,VisAngles,w_Earth,phi_obs_0):
+def integral(time,w_Earth,phi_obs_0,longitudes):
     #start = tyme.time()
     """
     Function that calculates the integral of cosine squared, which is calculated analytically to be 
     the variable "integral" below. This is considered to be the contribution of each slice to the 
     apparent albedo multiplied by some constant. 
 
-    Inputs: 
+    Input(s): 
         phi: longitude array
         phi_obs: the observer longitude, which is dependent on time 
 
-    Output: 
+    Output(s): 
         The integral result of the forward model multiplied by the 4/3*pi constant for each slice. 
     """
+    C = (4/(3*np.pi))
     phi_obs = phi_obs_0 - 1.0*w_Earth*time # SOP longitude at each time
     starts3 = tyme.time()
+    limits = list(map(lambda l : bounds2(l),longitudes))
+    sliceNum = [list(limits[x].keys()) for x in range(len(limits))]
+    bounds = [list(limits[x].values()) for x in range(len(limits))]
+    end = tyme.time()
 
-    #limits = list(map(lambda t: bounds(t,VisAngles[np.where(time==t)[0][0]],longitudes),time))
-    limits = [bounds(t,VisAngles[x],longitudes) for x, t in enumerate(time)]
-    print ("to calculate the limits in the integral, it take about ", tyme.time()-starts3)
-    #print (limits)
-    lenTime,slices,Z = np.shape(limits)
-    limits = np.transpose(limits,[2,0,1])
-    print (limits[0])
-    C = (4/(3*np.pi))
-    x = np.array([phi_obs,]*slices).transpose()
-    #print (x)
-    integral = ((1/2)*(np.asarray(limits[1]-limits[0]))+
-        (1/4)*np.sin(2*limits[1]-2*x)-
-        (1/4)*np.sin(2*limits[0]-2*x)) 
-     
-    return C*integral
+    print ("to calculate the limits in the integral, it take about ", end-starts3)
+
+    upper = np.asarray([np.asarray([bounds[x][y][0] for y in range(len(bounds[x]))]) for x in range(len(bounds))])
+    lower = np.asarray([np.asarray([bounds[x][y][1] for y in range(len(bounds[x]))]) for x in range(len(bounds))])
+    x = np.asarray([phi_obs,]*(1)).transpose()
+    integral = [C*((1/2)*(up-low)+(1/4)*np.sin(2*up-2*t)-(1/4)*np.sin(2*low-2*t)) for up,low,t in zip(upper,lower,x) ]
+    return integral,sliceNum
 
 #UPDATE THIS TO MAIN CODE
 #FIX SECOND TO HAVE EXACTLY 60*60*24 for now (Done) 
@@ -260,9 +262,9 @@ def timeToLongitude(time):
     longitude. Important that the input is in SECONDS. 
     """
     if not isinstance(time,list):
-        longitude = np.rad2deg((2*np.pi-(time%86148.0)*(2*np.pi/86148.0)))
+        longitude = np.rad2deg((2*np.pi-(time%86400.0)*(2*np.pi/86400.0)))
         return longitude
-    longitude = [(2*np.pi-(t%86148.0)*(2*np.pi/86148.0)) for t in time]
+    longitude = [(2*np.pi-(t%86400.0)*(2*np.pi/86400.0)) for t in time]
     longitude = np.rad2deg(longitude)
     return longitude
 
@@ -342,67 +344,120 @@ def bounds(t,bounds,longitudes):
     Two = bounds[0]
     One = bounds[1]
     slices = len(longitudes)-1
-    #trueLon = longitudes
+    global cond
     #If the region is including the middle
     if (One>Two):
-        print (t)
-        print (bounds)
         longitudes = list(filter(lambda x: not Two<=x<=One,longitudes))
         longitudes.extend([One,Two])
         longitudes = np.asarray(sorted(longitudes))
-        #rightSide = list(pairwise(iter(sorted(list(filter(lambda x: 0<=x<=np.pi,longitudes))))))
         rightSide = list(pairwise(iter(longitudes[(longitudes >= 0) & (longitudes<=np.pi)])))
-        """
-        rightSide = longitudes[(longitudes >= 0) & (longitudes<=np.pi)]
-        rightSide = list(zip(rightSide, rightSide[1:] + rightSide[:1]))
-        rightSide.pop()
-
-        leftSide = longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)]
-        leftSide = list(zip(leftSide, leftSide[1:] + leftSide[:1]))
-        del leftSide[0]
-        """
         
-        
-        #leftSide = list(pairwise(iter(sorted(list(filter(lambda x: np.pi<x<=2*np.pi,longitudes))))))[::-1]
         leftSide = list(pairwise(iter(longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)])))[::-1]
         lenLimits = len(rightSide)+len(leftSide)
-        #print ("bounds takes about ", tyme.time()-start)
-        print (leftSide+[(0,0)]*(slices-lenLimits)+rightSide, "\n")
-        return leftSide+[(0,0)]*(slices-lenLimits)+rightSide 
+        finalList1 = leftSide+[(0,0)]*(slices-lenLimits)+rightSide
+        finalList2 = rightSide+[(0,0)]*(slices-lenLimits)+leftSide
+        if cond == 0:
+            return finalList1
+        else: 
+            return finalList2[::-1]
     #When the region is not including the middle
     elif (Two>One):
+        cond +=1
         longitudes = list(filter(lambda x: Two>x>One, longitudes))
         longitudes.extend([One,Two])
         longitudes = sorted(longitudes)
         finalLon = list(pairwise(iter(longitudes)))[::-1]
-        #lenLimits = len(finalLon)
-        #print ([(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi))))
-        return [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi)))
-        """
-        if One >= trueLon[1] and Two <= trueLon[-2]:
-            return [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi)))
-        elif Two >= trueLon[-2]:
-            return finalLon + [(0,0)]*(slices-lenLimits) 
-        elif One <= trueLon[1]:
-            return [(0,0)]*(slices-lenLimits) + finalLon 
-        """
+        finalList = [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi))) 
+        return finalList
+
+def bounds2(lon):
+    "returns the longitudal bound slice for a given time and limit "
+    Two = lon[-2]
+    One = lon[-1]
+    slices = len(lon)-3
+    lon = list(dict.fromkeys(lon))
+    lon.sort(reverse=True)
+    limits = list(pairwise(iter(lon)))
+    ind  = [i for i,lim in enumerate(limits) if lim[0]==Two or lim[1]==One]
+    if (Two>One): 
+        sliceNum = list(range(ind[0],ind[1]+1))
+        limits = limits[ind[0]:ind[1]+1]
+        if sliceNum[-1] == slices:
+            sliceNum = [i-1 for i in sliceNum] 
+        #print ("yes")
+        #print (sliceNum)
+        return dict(zip(sliceNum,limits))
+    else:
+        if len(limits) == slices:
+            limits = limits[0:ind[0]+1] + limits[(ind[1]-ind[0]):slices+1]
+            sliceNum = list(range(0,ind[0]+1))+list(range(ind[1]-ind[0],slices))
+            #print (sliceNum,"tamere")
+        elif len(limits) == slices+1:
+            limits = limits[0:ind[0]+1] + limits[(ind[1]-ind[0])+1:slices+1]
+            sliceNum = list(range(0,ind[0]+1))+list(range((ind[1]-ind[0])-1,slices))
+            #print (sliceNum,"en")
+        elif len(limits) == slices+2: 
+            limits = limits[0:ind[0]+1] + limits[(ind[1]-ind[0]):slices+2]
+            sliceNum = list(range(0,ind[0]+1))+list(range(ind[1]-ind[0]-2,slices))
+            #print (sliceNum,"shorts")
+        #print ("no")
+        return dict(zip(sliceNum,limits))
+    """
+    #longitudes.extend([One,Two])
+
+    global cond
+    #If the region is including the middle
+    if (One>Two):
+        longitudes = list(filter(lambda x: not Two<=x<=One,longitudes))
+        #longitudes = list(longitudes[(longitudes<Two) | (longitudes>One)])
+
+        longitudes.extend([One,Two])
+        longitudes = np.asarray(sorted(longitudes))
+        rightSide = list(pairwise(iter(longitudes[(longitudes >= 0) & (longitudes<=np.pi)])))
+        
+        leftSide = list(pairwise(iter(longitudes[(longitudes > np.pi) & (longitudes<=2*np.pi)])))[::-1]
+        lenLimits = len(rightSide)+len(leftSide)
+        finalList1 = leftSide+[(0,0)]*(slices-lenLimits)+rightSide
+        finalList2 = rightSide+[(0,0)]*(slices-lenLimits)+leftSide
+        if cond == 0:
+            return finalList1
+        else: 
+            return finalList2[::-1]
+    #When the region is not including the middle
+    elif (Two>One):
+        cond = 1
+        longitudes = list(filter(lambda x: Two>x>One, longitudes))
+        longitudes.extend([One,Two])
+        longitudes = sorted(longitudes)
+        finalLon = list(pairwise(iter(longitudes)))[::-1]
+        finalList = [(0,0)]*(int((slices*(2*np.pi-Two))/(2*np.pi))) + finalLon  + [(0,0)]*(int(One*slices/(2*np.pi))) 
+        return finalList
+    """
+
+def longitudeToTime(longitude):
+    time = [(2*np.pi-l)/(2*np.pi/86400.0) for l in longitude]
+    return time
 
 def lightcurve2(albedos,longitudes,n,time_days=1.0,phi_obs_0=0.0):
     """
     Version 2 of the forward model. 
     """    
     longitudes.reverse()
-    longitudes = np.asarray(longitudes)
     time = np.linspace(0, 24*time_days , n , False)
+    
     w_Earth = 2.0*np.pi/24 # Earth's angular velocity 
-    #start1 = tyme.time()
-    VisAngles = list(map(lambda t : visibleAngle(t,longitudes,time_days),time))
-    #print ("VisAngle take about ", tyme.time()-start1)
-    #start2 = tyme.time()  
-    kern = albedos*integral(time,VisAngles,w_Earth,phi_obs_0)
+    trueLon = longitudes
+    
+    longitudes = list(map(lambda t : trueLon+visibleAngle(t,time_days),time))
+    
+    kern, sliceNum = integral(time,w_Earth,phi_obs_0,longitudes)
     #print (kern)
-    lightcurveR = sum(kern.T)*(3/2)
-    #print ("integral takes about ", tyme.time()-start2)
+    albedos= [[albedos[x] for x in timeSlice]for timeSlice in sliceNum ]
+    kern = [[albedos[x][y]*kern[x][y] for y in range(len(kern[x]))]for x in range(len(time))]
+    #print (kern)
+    kern= [sum(kern[i]) for i in range(len(time))]
+
+    lightcurveR = np.asarray(kern)*(3/2)
     return time, lightcurveR
 
 def drawAlbedo(albedo,w,numdata):
@@ -434,26 +489,110 @@ def drawAlbedo(albedo,w,numdata):
     final = np.asarray(albhour)
 
     return x,final
-#lon = []
-#albedos = [ran.random() for x in range(4)]
 
-a = np.array([1,2,3,4,5,6])
-Two =1.3
-#print (a[a>Two])
+def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,
+    plot=True,data=False):
+    """
+    General function to plot the Eckert map based off the number of 
+    slices
+    Input(s):
+        albedo: takes in the albedo value at each longitudinal slices.
+        numOfSlices: number of longitudinal slices.
+        nlats, nlons = Used for the contour function. Basically, how 
+                       many points to plot in the Eckert projection. 
+                       (Default to 400, I do not recommend changing it!)
+        fig (Default to None): This is for animation, since the animation function updates
+             the fig, it needs the previous iteration. 
+        bar (Default to None): The color bar on the side. Again for the animation to keep 
+             the bar constant and not changing between frames.
+        plot (Default to TRUE): if TRUE, plots the Eckert project, else
+             returns longitudes, gridlines and the albedos. 
+    Output(s): 
+        EckertIV map projection of the results for a general number 
+        of slices.
+    """
+    mod = nlons%numOfSlices 
+    if (mod==0):
+        interval = int(nlons/numOfSlices)
+    else: 
+        interval = int(nlons/numOfSlices)
+        nlons=nlons-mod
+        nlons = nlons-mod
+    longitude = np.rad2deg(np.linspace(2*np.pi,0,nlons))
+    lattitude = np.rad2deg(np.linspace(-np.pi/2,np.pi/2,nlats))
+    lattitude, longitude = np.meshgrid(lattitude,longitude)
+    w = 0
+    A = []
+    a_dumb = []
+    gridlines=[360]
+    for i in range(nlons):
+        if (w == len(albedo)):
+            break
+        temp = [albedo[w] for j in range(nlats)]
+        temp_dum = [np.random.randint(0,2) for j in range(nlats)]
+        if i%interval==0 and i!=0:
+            w=w+1
+            gridlines.append(longitude[i][0])
+        A.append(temp)
+        a_dumb.append(temp_dum)
+    gridlines.append(0)
+    if plot == False:
+        return longitude,lattitude,A,gridlines
+    if type(fig)==type(None):
+        fig = plt.figure(figsize=(12,6))
+    else:
+        fig = fig
+    ax = fig.add_subplot(1,1,1,projection = ccrs.EckertIV())
+    #if (len(A)!=nlats):
+    #    for i in range(nlats-len(A)):
+    #        A.append(A[len(A)-1])
+    ax.clear()
+    cs = ax.contourf(longitude,lattitude,A,transform=ccrs.PlateCarree(),cmap='gist_gray',alpha=0.3)
+    if data: 
+        return cs
+    #SET MAX OF COLORBAR TO 1
+    cbar = fig.colorbar(cs)
+    cbar.ax.set_ylabel(r'Apparent Albedo $A^*$')
+    ax.coastlines()
+    ax.gridlines(color='grey',linewidth=1.5,xlocs = gridlines,ylocs=None) 
+    ax.set_global()
+    return longitude,lattitude,A,cs,fig,ax,gridlines
+
+def lambert(alpha):
+    return (2/(3*np.pi))*(np.sin(alpha)+(np.pi-alpha)*np.cos(alpha)) 
 
 
-albedos = [1,0.5,1,0.6]
-numOfSlices = len(albedos)
+x = np.linspace(0,2*np.pi,1000)
+l = lambert(x)
+plt.plot(x,l)
+plt.show()
+
+albedos = [1,1,1,0]
+A1,A2,A3,A4 = np.loadtxt("MCMC_15_04_08__4.csv",delimiter=',',unpack=True)
+A1 = sorted(A1)
+A2 = sorted(A2)
+A3 = sorted(A3)
+A4 = sorted(A4)
+print (np.mean(A1)-A1[15],A1[83]-np.mean(A1))
+print (np.mean(A2)-A2[15],A2[83]-np.mean(A2))
+print (np.mean(A3)-A3[15],A3[83]-np.mean(A3))
+print (np.mean(A4)-A4[15],A4[83]-np.mean(A4))
+#Eckert(albedos,len(albedos))
+#plt.show()
+    
+#numOfSlices = len(albedos)
 #
 
-albedos1 = [0,0,0,1,1,1]
-longitudes = np.ndarray.tolist(np.linspace(2*np.pi,0,numOfSlices+1))
+#albedos1 = [0,0,0,1,1,1]
+#cond = 0 
+"""
 start = tyme.time()
+#longitudes = np.ndarray.tolist(np.linspace(2*np.pi,0,numOfSlices+1))
 
-time, light = lightcurve2(albedos,longitudes,100)
+time, light = lightcurve2(albedos,longitudes,1000)
 print (tyme.time()-start)
 
-hour, alb = drawAlbedo(albedos,2*np.pi/24,1000)
+hour, alb = drawAlbedo(albedos,2*np.pi/24,5000)
 
 timeComp, lightComp = apparentAlbedo(albedos,alb=True)
 #print (light)
@@ -462,23 +601,40 @@ timeComp, lightComp = apparentAlbedo(albedos,alb=True)
 fig,ax = plt.subplots(1,1,gridspec_kw={'height_ratios':[1]},figsize=(10,8))
 x = np.linspace(0,24,1000,False)
 
-ax.plot(time,np.round(light,6),'.',label="New Lightcurve")
+ax.plot(time,light,'.',label="New Lightcurve")
 ax.plot(timeComp,np.round(lightComp,6),'.',label="Old Lightcurve")
 ax.set_title('Result for {}'.format(np.round(albedos,3)),fontsize=22)
-#ax.plot(x,-0.5*np.sin((2*np.pi/24)*x)+0.5,'--',linewidth=7,label="Rough Prediction for [0,1]")
 ax.plot(hour,alb,'--',color='purple',linewidth=3,alpha=0.5)
 #ax.plot(time1,light1,'.',label="Simulation result for [1,0]")
-#ax.plot(x,0.5*np.sin((2*np.pi/24)*x)+0.5,'--',linewidth=7,label="Prediction for [1,0]")
 
 ax.set_xlabel("Time (h)",fontsize=22)
 ax.set_ylabel("Apparent Albedo",fontsize=22)
 ax.legend(fontsize=15)
 ax.tick_params(labelsize=22)
 plt.show()
+"""
 
-#end = time.time()
 
 
+
+"""
+One,Two = np.loadtxt("animation.csv",delimiter=',',unpack=True)
+plt.ion()
+fig = plt.figure(1,figsize=(12,6))
+for i in range(len(One)):
+    fig.clear()
+    plt.xlim(0,2*np.pi)
+    plt.annotate(str(time[i]),xy=(2,0.1))
+
+    #plt.axvspan(One[i], Two[i], alpha=0.5, color='red')
+    plt.axvline(One[i],color='red',label='One')
+    plt.axvline(Two[i],color='blue',label='Two')
+    plt.pause(0.5)
+#plt.axvline(18)
+plt.ioff()
+plt.legend()
+plt.show()
+"""
 
 def roll(Dict,shift):
     slices = np.fromiter(Dict.keys(), dtype=int)
@@ -490,13 +646,6 @@ def roll(Dict,shift):
         Dict[i] = albedo[i]
     return Dict
 
-
-#surf = initialPlanet(numOfSlices,plot=False)
-#print (roll(surf,-1)) 
-
-test = [1,2,3,4]
-test.reverse()
-#print (test)
 
 """
 hour = dt.datetime.now().time()
