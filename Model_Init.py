@@ -137,7 +137,6 @@ def cloudCoverage(numOfSlices):
             clouds[i] = 0
     return clouds
 
-
 #In[]
 #Forward model defined in the paper 
 def bounds(t,bounds,longitudes):
