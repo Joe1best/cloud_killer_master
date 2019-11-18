@@ -3,8 +3,7 @@ import matplotlib.pyplot as plt
 import random as ran 
 import cartopy.crs as ccrs
 import init as var
-import Model_Init as M_init
-
+import Utilities as util
 
 #Model initialization
 def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,
@@ -147,7 +146,7 @@ def bounds(t,bounds,longitudes):
     longitudes = list(longitudes)
     longitudes.extend([One,Two])
     longitudes = list(dict.fromkeys(sorted(longitudes)))
-    pairLon = list(pairwise(iter(longitudes)))
+    pairLon = list(util.pairwise(iter(longitudes)))
     #If the region is including the middle
     if (One>Two):
         finalList = [x if (pairLon[i][0] < Two or pairLon[i][1]>One) else (0,0) for i,x in enumerate(pairLon)][::-1]
@@ -220,7 +219,7 @@ def visibleLong(hour):
     """
 
     #The current longitude at time "hour"
-    currentLon = np.deg2rad(M_init.timeToLongitude(hour*60*60)) 
+    currentLon = np.deg2rad(timeToLongitude(hour*60*60)) 
     
     #The two terminators visible at time "hour". This is assuming half
     #the planet is visible at any given point in time 
@@ -306,8 +305,8 @@ def effectiveAlbedo(numOfSlices,Acloud,plot=True,calClouds=None,calsurf=None):
     """
     #If no maps are given as an inputs, generate them. 
     if type(calClouds)==type(None):
-        clouds = M_init.cloudCoverage(numOfSlices)
-        surfAlb = M_init.initialPlanet(numOfSlices,False)
+        clouds = cloudCoverage(numOfSlices)
+        surfAlb = initialPlanet(numOfSlices,False)
         
         #Function that describes the effective albedo given a surface albedo
         #and the cloud coverage over that slice. 

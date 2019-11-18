@@ -11,7 +11,6 @@ from matplotlib import style
 import collections
 import datetime as dt
 import time as tyme
-import itertools
 from netCDF4 import Dataset
 import math
 from astropy.time import Time
@@ -192,7 +191,7 @@ def dynamicMap(time,numOfSlices,Acloud,surfAlb,cloudIn,rateDiss,speedCloud,formi
     if (forming):
         form(cloudIn)
     cloudIn = move(cloudIn,time,speedCloud)
-    effAlb=effectiveAlbedo(numOfSlices,Acloud,False,calClouds=cloudIn,calsurf=surfAlb)
+    effAlb=M_init.effectiveAlbedo(numOfSlices,Acloud,False,calClouds=cloudIn,calsurf=surfAlb)
     return effAlb,cloudIn
 
 def rotate(albedo):
@@ -662,47 +661,13 @@ def minimumAlb(albedos):
     minimum = [min(albedoSlice[i]) for i in range(nslice)]
     return minimum
 
-#In[]
-#Utilities
-def roll(Dict,shift):
-    slices = np.fromiter(Dict.keys(), dtype=int)
-    albedo = np.fromiter(Dict.values(),dtype=float)
-    albedo = np.roll(albedo,shift)
-    slices = np.roll(slices,shift)
-    Dict.clear()
-    for i in slices:
-        Dict[i] = albedo[i]
-    return Dict
 
-def pairwise(iterable):
-    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
-    a, b = itertools.tee(iterable)
-    next(b, None)
-    return zip(a, b)
-
-def date_after(d):
-    """
-    Input: an integer d
-    
-    Quickly find out the actual calendar date of some day in the EPIC dataset. 
-    
-    Output: the date, d days after 2015-06-13 00:00:00.000
-    """
-    
-    t_i = Time("2015-06-13", format='iso', scale='utc')  # make a time object
-    t_new_MJD = t_i.mjd + d # compute the Modified Julian Day (MJD) of the new date
-    t_new = Time(t_new_MJD, format='mjd') # make a new time object
-    t_new_iso = t_new.iso # extract the ISO (YY:MM:DD HH:MM:SS) of the new date
-    t_new_iso = t_new_iso.replace(" 00:00:00.000", "") # truncate after DD
-    return t_new_iso
 
 #In[]:
 #Main method
 if __name__ == "__main__":
     #VARY CLOUDS VERY SLOWLY such that the time map is not varying that much.
     #SEE IF I CAN EXTRACT THE TIME CHANGE dissipation. HOW I CAN FIT FOR THAT
-    #Add a verbose option
-    #A lot of parameters eh 
     daySim = 790
     #t, longitude, reflectance, reflectance_err, contains_nan = EPIC_data(daySim,plot=True)
     #Eckert([0.23616174792007924, 0.21081179505525094, 0.24803993899567978, 0.15060034674753922, 0.27145193081592317, 0.26167097423359004],6)
@@ -750,7 +715,7 @@ if __name__ == "__main__":
         bics = []
         for j in range(var.NTRIALS):
             dumAlb,dumMin,eff= runSatellowan(var.NUMOFSLICES,var.ACLOUD,var.NPARA,var.RATEDISS,var.SPEEDCLOUD,var.WW,var.NDATA,var.FASTFORWARD,var.DAYS,
-                    var.NWALKERS,var.NSAMPLES,var.NSTEPS,var.TIMESPAN,var.PHISPAN,var.BURNIN,plot=var.PLOT,mcmc=var.MCMC,repeat=var.REPEAT,walkers=var.WALKERS,forming=var.CLOUDFORMING,Epic=None)
+                    var.NWALKERS,var.NSAMPLES,steps,var.TIMESPAN,var.PHISPAN,var.BURNIN,plot=var.PLOT,mcmc=var.MCMC,repeat=var.REPEAT,walkers=var.WALKERS,forming=var.CLOUDFORMING,Epic=None)
     print ("The surface albedo from MCMC is " ,dumMin," compared to the inputted map of ", eff)
     """     
             #,aic,bic #print (aic,bic)

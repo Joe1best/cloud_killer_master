@@ -31,7 +31,7 @@ PHISPAN = 1
 #Burning period of the MCMC (Default at 150)
 BURNIN = 150
 #Run the MCMC for the simulation or not 
-MCMC = False
+MCMC = True
 #To plot the things or not
 PLOT = True
 #Number of data points sampled from the simulated satellite
