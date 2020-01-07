@@ -19,7 +19,7 @@ NWALKERS = 100
 #How many times to run the simulation 
 NTRIALS = 1
 #Number of steps for MCMC. Should be an array 
-NSTEPS = [500]
+NSTEPS = [1500]
 #Speed of how much the clouds move 
 FASTFORWARD = 1
 #Number of days the model runs for 
@@ -41,6 +41,6 @@ NPARA = NUMOFSLICES
 #
 REPEAT = False
 #To generate clouds or not 
-CLOUDFORMING = True
+CLOUDFORMING = False
 #To plot the walkers or not
-WALKERS = False
+WALKERS = True

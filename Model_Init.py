@@ -59,9 +59,6 @@ def Eckert(albedo,numOfSlices,nlats=400,nlons=400,fig=None,bar=None,
     else:
         fig = fig
     ax = fig.add_subplot(1,1,1,projection = ccrs.EckertIV())
-    #if (len(A)!=nlats):
-    #    for i in range(nlats-len(A)):
-    #        A.append(A[len(A)-1])
     ax.clear()
     cs = ax.contourf(longitude,lattitude,A,transform=ccrs.PlateCarree(),
         cmap='gist_gray',alpha=0.3)
@@ -320,3 +317,7 @@ def effectiveAlbedo(numOfSlices,Acloud,plot=True,calClouds=None,calsurf=None):
     else: 
         effAlb = [calClouds[i]*(1-(1-Acloud)*(1-calsurf[i]))+(1-calClouds[i])*calsurf[i] for i in range(numOfSlices)] 
         return effAlb
+
+
+Eckert([0.2376,0.228673,0.18367,0.27335],4)
+plt.show()

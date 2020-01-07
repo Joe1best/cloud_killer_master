@@ -1,5 +1,7 @@
 import numpy as np 
 import itertools
+from astropy.time import Time
+
 
 
 #Utilities

@@ -243,9 +243,12 @@ def plot_walkers_all(chain,expAlb=None):
         for p in paths:
             if n is not ndim-1:
                 plt.tick_params(axis='x',which='both',bottom=False,top=False,labelbottom=False)
+                plt.tick_params(labelsize=20)
+
             else:
-                plt.xlabel("Steps")
-            plt.ylabel(r"$A$"+"[%d]"%(n))
+                plt.xlabel("Steps",fontsize=20)
+                plt.tick_params(labelsize=20)
+            plt.ylabel(r"$A$"+"[%d]"%(n),fontsize=20)
             plt.plot(step_number, p,color='k',alpha=0.3) # all walker paths
             if type(expAlb)!=type(None):
                 plt.axhline(expAlb[n],color='red',linewidth=1) #Draw the expected value
@@ -299,4 +302,4 @@ def cornerplot(chain, burnin):
     
     # include lines denoting the 16th, 50th (median) and 84th quantiles     
     corner.corner(samples, labels=label_albs, quantiles=(0.16, 0.5, 0.84), 
-                  levels=(1-np.exp(-0.5),),show_titles=True,truth_color='#FFD43B')
+                  levels=(1-np.exp(-0.5),),show_titles=False,truth_color='#FFD43B')
